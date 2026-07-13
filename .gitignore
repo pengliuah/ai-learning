@@ -1,0 +1,21 @@
+# node / frontend
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+
+# python / uv
+__pycache__/
+*.py[cod]
+.venv/
+.uv-cache/
+.uv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# app data
+backend/data/*.json

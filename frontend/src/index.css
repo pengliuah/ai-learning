@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gray-50 text-gray-900 antialiased;
+}
+
+/* KaTeX tags CJK characters with .cjk_fallback but ships no font for them.
+   Provide a CJK font so formulas like F_{浮} render instead of boxes. */
+.cjk_fallback {
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC",
+    "Source Han Sans SC", sans-serif;
+}

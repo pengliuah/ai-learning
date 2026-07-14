@@ -163,4 +163,28 @@ describe('ModuleDetail', () => {
     // the $...$ delimiters are consumed by KaTeX, not shown as raw text
     expect(container.textContent).not.toContain('$')
   })
+  it('renders math and bold in key takeaways, not raw markdown', async () => {
+    const doc = buildDoc([
+      buildModule({
+        id: 'm1',
+        content: {
+          markdown: '正文内容，无公式。',
+          keyTakeaways: ['**方向与符号**：符号记为 $F_{浮}$，单位是牛顿（$\\text{N}$）。'],
+        },
+      }),
+    ])
+    vi.mocked(api.getPlan).mockResolvedValue(doc)
+
+    const { container } = renderAtRoute(
+      <ModuleDetail />,
+      '/plans/:planId/modules/:moduleId',
+      '/plans/plan-1/modules/m1',
+    )
+
+    await waitFor(() => expect(container.querySelector('.katex')).not.toBeNull(), { timeout: 3000 })
+    expect(container.querySelector('.cjk_fallback')).not.toBeNull()
+    expect(container.textContent).not.toContain('**')
+    expect(container.textContent).not.toContain('$')
+  })
+
 })

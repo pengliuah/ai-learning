@@ -200,7 +200,11 @@ export function ModuleDetail() {
                         {module.content!.keyTakeaways.map((p, i) => (
                           <li key={i} className="flex gap-2">
                             <span className="text-indigo-400">{i + 1}.</span>
-                            <span>{p}</span>
+                            <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkMath]}
+                          rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
+                          components={{ p: ({ children }) => <span>{children}</span> }}
+                        >{p}</ReactMarkdown>
                           </li>
                         ))}
                       </ul>

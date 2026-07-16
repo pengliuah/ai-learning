@@ -11,11 +11,12 @@ import logging
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, StreamingResponse
 
 from . import store
 from .agent import LearningCoach
-from .config import is_configured, settings
+from .config import BACKEND_DIR, is_configured, settings
 from .schemas import (
     AnswersState,
     CoachRequest,
@@ -480,3 +481,16 @@ async def coach_stream(req: CoachRequest):
 def _sse(event: str, data) -> str:
     """格式化一条 SSE 事件帧。"""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+# --- 生产静态托管: 前端构建产物 ---
+_frontend_dist = BACKEND_DIR.parent / "frontend" / "dist"
+if _frontend_dist.exists():
+    app.mount("/assets", StaticFiles(directory=_frontend_dist / "assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    def spa_fallback(full_path: str):
+        """非 API 路径返回 index.html，交给前端路由处理 (SPA)。"""
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="not found")
+        return FileResponse(_frontend_dist / "index.html")

@@ -1,9 +1,19 @@
 import type { Document, PlanListItem, Quiz, AnswersState, Content, GradingResult } from "./types";
 
-const BASE = "/api";
+const API_BASE_KEY = "zhixue_api_base";
+
+export function getApiBase(): string {
+  return localStorage.getItem(API_BASE_KEY) || import.meta.env.VITE_API_BASE || "/api";
+}
+
+export function setApiBase(url: string): void {
+  const trimmed = url.trim();
+  if (trimmed) localStorage.setItem(API_BASE_KEY, trimmed);
+  else localStorage.removeItem(API_BASE_KEY);
+}
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + url, init);
+  const res = await fetch(getApiBase() + url, init);
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     throw new Error(detail || `HTTP ${res.status}`);
@@ -63,7 +73,7 @@ export const api = {
     moduleId: string,
     onDelta: (text: string) => void,
   ): Promise<Document> => {
-    const res = await fetch(`${BASE}/plans/${planId}/modules/${moduleId}/content`, {
+    const res = await fetch(`${getApiBase()}/plans/${planId}/modules/${moduleId}/content`, {
       method: "POST",
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

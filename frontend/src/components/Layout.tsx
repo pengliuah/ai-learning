@@ -1,8 +1,12 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Settings } from "lucide-react";
 import { HealthBanner } from "./HealthBanner";
+import { SettingsDialog } from "./SettingsDialog";
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const [showSettings, setShowSettings] = useState(false);
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-gray-200 bg-white">
@@ -11,10 +15,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <BookOpen className="h-4 w-4 text-indigo-600" />
             智学助手
           </Link>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="ml-auto rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+            title="设置"
+          >
+            <Settings className="h-4 w-4" />
+          </button>
         </div>
       </header>
       <HealthBanner />
       <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
     </div>
   );
 }

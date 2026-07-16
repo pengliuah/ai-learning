@@ -19,3 +19,5 @@ __pycache__/
 
 # app data
 backend/data/*.json
+# Android SDK (local)
+.android-sdk/

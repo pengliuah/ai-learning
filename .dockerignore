@@ -1,0 +1,15 @@
+.git/
+**/node_modules/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/*.pyc
+backend/.env
+backend/data/
+backend/*.log
+frontend/dist/
+frontend/*.log
+mobile/
+.android-sdk/
+.uv-cache/
+docs/

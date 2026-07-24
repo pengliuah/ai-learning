@@ -5,10 +5,7 @@ import {
   ArrowLeft, Loader2, FileText, ListChecks, Sparkles,
   CheckCircle2, XCircle, ArrowRight, RotateCcw, BookOpen,
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
+import { Markdown } from "../components/Markdown";
 import { usePlan, useGenerateQuiz, useGradeQuiz, useSaveAnswers, PLAN_KEYS } from "../hooks/usePlans";
 import { api } from "../api/client";
 import { StatusBadge, DifficultyBadge } from "../components/StatusBadge";
@@ -177,7 +174,7 @@ export function ModuleDetail() {
                     生成中...
                   </div>
                   <div className="prose prose-sm max-w-none">
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}>{streamText}</ReactMarkdown>
+                    <Markdown>{streamText}</Markdown>
                   </div>
                 </div>
               )}
@@ -189,9 +186,7 @@ export function ModuleDetail() {
               {hasContent && !streaming && (
                 <div>
                   <div className="prose prose-sm max-w-none">
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}>
-                      {module.content!.markdown}
-                    </ReactMarkdown>
+                    <Markdown>{module.content!.markdown}</Markdown>
                   </div>
                   {module.content!.keyTakeaways.length > 0 && (
                     <div className="mt-4 rounded-lg border border-indigo-100 bg-indigo-50 p-4">
@@ -200,11 +195,7 @@ export function ModuleDetail() {
                         {module.content!.keyTakeaways.map((p, i) => (
                           <li key={i} className="flex gap-2">
                             <span className="text-indigo-400">{i + 1}.</span>
-                            <ReactMarkdown
-                          remarkPlugins={[remarkGfm, remarkMath]}
-                          rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
-                          components={{ p: ({ children }) => <span>{children}</span> }}
-                        >{p}</ReactMarkdown>
+                            <Markdown inline>{p}</Markdown>
                           </li>
                         ))}
                       </ul>
@@ -240,7 +231,7 @@ export function ModuleDetail() {
                   {module.quiz!.questions.map((q, i) => (
                     <div key={q.id} className="rounded-lg border border-gray-200 bg-white p-4">
                       <p className="mb-3 text-sm font-medium text-gray-900">
-                        {i + 1}. {q.prompt}
+                        {i + 1}. <Markdown inline>{q.prompt}</Markdown>
                         <span className="ml-2 text-xs text-gray-400">
                           {q.type === "mcq" ? "单选" : "简答"}
                         </span>
@@ -264,7 +255,7 @@ export function ModuleDetail() {
                                 onChange={() => updateAnswer(q.id, opt)}
                                 className="text-indigo-600"
                               />
-                              <span className="text-gray-700">{opt}</span>
+                              <span className="text-gray-700"><Markdown inline>{opt}</Markdown></span>
                             </label>
                           ))}
                         </div>
@@ -349,19 +340,19 @@ function ResultsView({
         <div className="rounded-lg border border-green-200 bg-green-50 p-3">
           <p className="mb-2 text-xs font-medium text-green-800">优势</p>
           <ul className="space-y-1 text-xs text-green-700">
-            {r.assessment.strengths.map((s, i) => <li key={i}>{s}</li>)}
+            {r.assessment.strengths.map((s, i) => <li key={i}><Markdown inline>{s}</Markdown></li>)}
           </ul>
         </div>
         <div className="rounded-lg border border-red-200 bg-red-50 p-3">
           <p className="mb-2 text-xs font-medium text-red-800">不足</p>
           <ul className="space-y-1 text-xs text-red-700">
-            {r.assessment.weaknesses.map((s, i) => <li key={i}>{s}</li>)}
+            {r.assessment.weaknesses.map((s, i) => <li key={i}><Markdown inline>{s}</Markdown></li>)}
           </ul>
         </div>
         <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
           <p className="mb-2 text-xs font-medium text-indigo-800">建议</p>
           <ul className="space-y-1 text-xs text-indigo-700">
-            {r.assessment.recommendations.map((s, i) => <li key={i}>{s}</li>)}
+            {r.assessment.recommendations.map((s, i) => <li key={i}><Markdown inline>{s}</Markdown></li>)}
           </ul>
         </div>
       </div>
@@ -381,7 +372,7 @@ function ResultsView({
             >
               <div className="flex items-start justify-between gap-2">
                 <p className="text-sm font-medium text-gray-900">
-                  {i + 1}. {q.prompt}
+                  {i + 1}. <Markdown inline>{q.prompt}</Markdown>
                 </p>
                 <div className="flex items-center gap-1.5 whitespace-nowrap text-xs">
                   {qr.correct ? (
@@ -394,18 +385,18 @@ function ResultsView({
               </div>
 
               <div className="mt-2 space-y-1 text-xs text-gray-600">
-                <p><span className="text-gray-400">你的答案：</span>{qr.studentAnswer || "（未作答）"}</p>
+                <p><span className="text-gray-400">你的答案：</span>{qr.studentAnswer ? <Markdown inline>{qr.studentAnswer}</Markdown> : "（未作答）"}</p>
                 {q.type === "mcq" ? (
-                  <p><span className="text-gray-400">正确答案：</span>{q.answer}</p>
+                  <p><span className="text-gray-400">正确答案：</span>{q.answer && <Markdown inline>{q.answer}</Markdown>}</p>
                 ) : (
                   <>
-                    <p><span className="text-gray-400">参考答案：</span>{q.modelAnswer}</p>
+                    <p><span className="text-gray-400">参考答案：</span>{q.modelAnswer && <Markdown inline>{q.modelAnswer}</Markdown>}</p>
                     {q.keyPoints.length > 0 && (
-                      <p><span className="text-gray-400">要点：</span>{q.keyPoints.join("、")}</p>
+                      <p><span className="text-gray-400">要点：</span><Markdown inline>{q.keyPoints.join("、")}</Markdown></p>
                     )}
                   </>
                 )}
-                <p><span className="text-gray-400">反馈：</span>{qr.feedback}</p>
+                <p><span className="text-gray-400">反馈：</span><Markdown inline>{qr.feedback}</Markdown></p>
               </div>
             </div>
           );

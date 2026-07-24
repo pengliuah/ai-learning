@@ -187,4 +187,81 @@ describe('ModuleDetail', () => {
     expect(container.textContent).not.toContain('$')
   })
 
+  it('renders LaTeX math in quiz prompts and options via KaTeX', async () => {
+    const doc = buildDoc([
+      buildModule({
+        id: 'm1',
+        quiz: {
+          questions: [
+            {
+              id: 'q1',
+              type: 'mcq',
+              prompt: '化简 $\\frac{1}{2} + \\frac{1}{2}$ 的结果是？',
+              options: ['$\\frac{1}{2}$', '$1$', '$\\frac{1}{4}$'],
+              answer: '$1$',
+              modelAnswer: null,
+              keyPoints: [],
+              explanation: '同分母相加',
+            },
+          ],
+        },
+      }),
+    ])
+    vi.mocked(api.getPlan).mockResolvedValue(doc)
+
+    const { container, findByText } = renderAtRoute(
+      <ModuleDetail />,
+      '/plans/:planId/modules/:moduleId',
+      '/plans/plan-1/modules/m1',
+    )
+
+    fireEvent.click(await findByText('测验'))
+
+    await waitFor(() => expect(container.querySelector('.katex')).not.toBeNull(), { timeout: 3000 })
+    // $...$ delimiters are consumed by KaTeX, not shown as raw text
+    expect(container.textContent).not.toContain('$')
+  })
+
+  it('renders LaTeX math in grading results (answers, key points, feedback)', async () => {
+    const doc = buildDoc([
+      buildModule({
+        id: 'm1',
+        status: 'completed',
+        quiz: {
+          questions: [
+            {
+              id: 'q1',
+              type: 'short',
+              prompt: '求 $x^2 = 4$ 的解',
+              options: [],
+              answer: null,
+              modelAnswer: '解为 $x = \\pm 2$',
+              keyPoints: ['$x^2$ 的根成对出现', '记号 $\\pm$'],
+              explanation: '',
+            },
+          ],
+        },
+        result: {
+          results: [
+            { questionId: 'q1', score: 1, maxScore: 1, correct: true, feedback: '正确，$\\pm 2$ 是对的', studentAnswer: '$x = 2$' },
+          ],
+          totalScore: 1,
+          maxScore: 1,
+          assessment: { strengths: ['掌握 $\\pm$ 符号'], weaknesses: [], recommendations: [], level: 'intermediate' },
+        },
+      }),
+    ])
+    vi.mocked(api.getPlan).mockResolvedValue(doc)
+
+    const { container, findByText } = renderAtRoute(
+      <ModuleDetail />,
+      '/plans/:planId/modules/:moduleId',
+      '/plans/plan-1/modules/m1',
+    )
+
+    await findByText('批改结果')
+    await waitFor(() => expect(container.querySelector('.katex')).not.toBeNull(), { timeout: 3000 })
+    expect(container.textContent).not.toContain('$')
+  })
+
 })

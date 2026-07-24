@@ -2,7 +2,7 @@
 FROM node:20-slim AS frontend
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+RUN npm config set registry https://registry.npmmirror.com && npm ci
 COPY frontend/ ./
 RUN npm run build
 
@@ -10,8 +10,9 @@ RUN npm run build
 FROM python:3.12-slim
 WORKDIR /app/backend
 
-# Install uv (fast Python package manager)
-RUN pip install uv
+# Use Aliyun PyPI mirror (国内加速)
+ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+RUN pip install -i https://mirrors.aliyun.com/pypi/simple/ uv
 
 # Install backend dependencies (cached layer)
 COPY backend/pyproject.toml backend/uv.lock ./

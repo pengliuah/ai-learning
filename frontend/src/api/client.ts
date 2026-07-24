@@ -1,15 +1,49 @@
 import type { Document, PlanListItem, Quiz, AnswersState, Content, GradingResult } from "./types";
 
 const API_BASE_KEY = "zhixue_api_base";
+const API_BASE_HISTORY_KEY = "zhixue_api_base_history";
+const HISTORY_MAX = 10;
+
+/** 默认后端地址（含 /api）。未在 localStorage / VITE_API_BASE 覆盖时使用。 */
+export const DEFAULT_API_BASE = "http://47.93.124.101:9001/api";
 
 export function getApiBase(): string {
-  return localStorage.getItem(API_BASE_KEY) || import.meta.env.VITE_API_BASE || "/api";
+  return localStorage.getItem(API_BASE_KEY) || import.meta.env.VITE_API_BASE || DEFAULT_API_BASE;
 }
 
+/** 设置当前后端地址；非空时同时记入历史（便于下次下拉选择）。 */
 export function setApiBase(url: string): void {
   const trimmed = url.trim();
-  if (trimmed) localStorage.setItem(API_BASE_KEY, trimmed);
-  else localStorage.removeItem(API_BASE_KEY);
+  if (trimmed) {
+    localStorage.setItem(API_BASE_KEY, trimmed);
+    addApiBaseHistory(trimmed);
+  } else {
+    localStorage.removeItem(API_BASE_KEY);
+  }
+}
+
+/** 已保存的后端地址历史（最近优先，去重）。 */
+export function getApiBaseHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(API_BASE_HISTORY_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? (arr.filter((x) => typeof x === "string") as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function addApiBaseHistory(url: string): void {
+  const trimmed = url.trim();
+  if (!trimmed) return;
+  const next = [trimmed, ...getApiBaseHistory().filter((u) => u !== trimmed)].slice(0, HISTORY_MAX);
+  localStorage.setItem(API_BASE_HISTORY_KEY, JSON.stringify(next));
+}
+
+export function removeApiBaseHistory(url: string): void {
+  const next = getApiBaseHistory().filter((u) => u !== url);
+  localStorage.setItem(API_BASE_HISTORY_KEY, JSON.stringify(next));
 }
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {

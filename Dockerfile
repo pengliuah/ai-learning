@@ -10,13 +10,15 @@ RUN npm run build
 FROM python:3.12-slim
 WORKDIR /app/backend
 
-# Use Aliyun PyPI mirror (国内加速)
-ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
-RUN pip install -i https://mirrors.aliyun.com/pypi/simple/ uv
+# Aliyun PyPI mirror (国内加速)
+ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 
-# Install backend dependencies (cached layer)
-COPY backend/pyproject.toml backend/uv.lock ./
-RUN rm -f .python-version && uv sync --frozen --no-dev
+# Install backend dependencies (pip respects PIP_INDEX_URL)
+RUN pip install --no-cache-dir \
+    "fastapi>=0.115" "uvicorn[standard]>=0.32" "langchain>=0.3" \
+    "langchain-openai>=0.3" "langchain-core>=0.3" "langgraph>=0.2" \
+    "deepagents>=0.5" "pydantic>=2.9" "pydantic-settings>=2.5" \
+    "python-dotenv>=1.0"
 
 # Copy backend source
 COPY backend/ ./
@@ -29,4 +31,4 @@ RUN mkdir -p /app/backend/data
 VOLUME /app/backend/data
 
 EXPOSE 8000
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

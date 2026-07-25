@@ -58,7 +58,7 @@ fi
 # ---- 2. 备份 docker-compose.yml 到 /opt ----
 if [ -f "$COMPOSE_FILE" ]; then
   ts=$(date +%Y%m%d-%H%M%S)
-  cp -a "$COMPOSE_FILE" "$BACKUP_DIR/docker-compose.yml.bak.$ts"   # 带时间戳归档, 便于回滚
+  cp -a "$COMPOSE_FILE" "$BACKUP_DIR/docker-compose.yml.bak.$ts"   # 带时间戳归档 (第 4 步恢复后会清理)
   cp -a "$COMPOSE_FILE" "$BACKUP_FILE"                             # 稳定副本, 第 4 步从此恢复
   log "2/5 已备份 $COMPOSE_FILE -> $BACKUP_FILE (归档 .bak.$ts)"
 else
@@ -89,6 +89,9 @@ fi
 if [ -f "$BACKUP_FILE" ]; then
   cp -a "$BACKUP_FILE" "$COMPOSE_FILE"
   log "4/5 已恢复自定义 $COMPOSE_FILE <- $BACKUP_FILE"
+  # 恢复后清理 /opt 中所有 docker-compose.yml.bak* 备份文件 (含稳定副本与时间戳归档)
+  rm -f "$BACKUP_DIR"/docker-compose.yml.bak*
+  log "4/5 已清理备份文件 $BACKUP_DIR/docker-compose.yml.bak*"
 else
   log "4/5 无备份可恢复 ($BACKUP_FILE 不存在), 使用仓库自带 compose 文件"
 fi

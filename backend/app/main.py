@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from . import store
 from .agent import LearningCoach
 from .config import BACKEND_DIR, is_configured, settings
+from .middleware import AccessLogMiddleware
 from .schemas import (
     AnswersState,
     CoachRequest,
@@ -35,6 +36,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(AccessLogMiddleware)
 
 coach = LearningCoach()
 logger = logging.getLogger(__name__)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from contextvars import ContextVar
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -15,8 +16,25 @@ DATA_DIR = BACKEND_DIR / "data"
 ARK_BASE_URL_DEFAULT = "https://ark.cn-beijing.volces.com/api/v3"
 ARK_MODEL_DEFAULT = "doubao-1.5-pro-32k"
 
-LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+# Unified log format, e.g.:
+#   2026-07-26 11:36:04 | 36.163.166.53:13700 | INFO     | app.main | <message>
+# The `client` (ip:port) field is injected per-record by ClientContextFilter
+# from the request-scoped context var set by AccessLogMiddleware; it is "-"
+# for lines emitted outside any request (startup, shutdown, etc.).
+LOG_FORMAT = "%(asctime)s | %(client)s | %(levelname)-8s | %(name)s | %(message)s"
 LOG_DATEFMT = "%Y-%m-%d %H:%M:%S"
+
+# Per-request client "ip:port". Set by AccessLogMiddleware around the whole
+# ASGI call so logs emitted inside endpoints (and SSE generators) carry it.
+client_addr_var: ContextVar[str] = ContextVar("client_addr", default="-")
+
+
+class ClientContextFilter(logging.Filter):
+    """Attach the current request's client ip:port to every log record."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.client = client_addr_var.get()
+        return True
 
 
 class Settings(BaseSettings):
@@ -31,21 +49,61 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
+def _make_handler() -> logging.Handler:
+    """A stderr handler with the unified format + client context filter."""
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=LOG_DATEFMT))
+    handler.addFilter(ClientContextFilter())
+    return handler
+
+
 def setup_logging() -> None:
-    """Configure the ``app`` logger hierarchy.
+    """Configure unified logging for the ``app`` hierarchy and uvicorn.
 
     Called once from ``app/__init__.py`` so every module can just do
     ``logging.getLogger(__name__)`` and inherit the handler + format.
-    Integrates with uvicorn's own logging on the same stderr stream.
+
+    uvicorn runs its own ``configure_logging()`` in ``Config.load()`` before
+    importing the app, so this runs after it and can override uvicorn's default
+    formatters/handlers. All logs share one format on stderr:
+    ``DATE | ip:port | LEVEL | name | message``.
+
+    Level semantics (preserved from the original setup):
+      - ``app.*`` follow ``settings.log_level`` (the ``LOG_LEVEL`` env var).
+      - uvicorn's own loggers keep the level uvicorn assigned them; only their
+        formatter/handler is replaced.
+      - access logs (``app.access``, emitted by AccessLogMiddleware) mirror
+        uvicorn.access's level so they stay visible at the default INFO even
+        when ``LOG_LEVEL=WARNING`` -- matching the previous uvicorn.access
+        behaviour -- and are not subject to the ``app`` logger's level.
     """
     level = getattr(logging, settings.log_level.upper(), logging.INFO)
+    handler = _make_handler()
+
+    # Application logger hierarchy: app.main, app.agent, app.access, ...
     app_logger = logging.getLogger("app")
     app_logger.setLevel(level)
-    if not app_logger.handlers:
-        handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=LOG_DATEFMT))
-        app_logger.addHandler(handler)
+    app_logger.handlers = [handler]
     app_logger.propagate = False
+
+    # uvicorn lifecycle/startup messages: reformat only, keep uvicorn's level.
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.asgi"):
+        uv_logger = logging.getLogger(name)
+        uv_logger.handlers = [handler]
+        uv_logger.propagate = False
+
+    # Access logging is owned by AccessLogMiddleware (unified format). Mirror
+    # uvicorn.access's level (default INFO) so access logs stay independent of
+    # the app level, then silence uvicorn's built-in access logger so each
+    # request is logged exactly once.
+    uv_access = logging.getLogger("uvicorn.access")
+    access_level = uv_access.level or logging.INFO
+    uv_access.disabled = True
+
+    app_access = logging.getLogger("app.access")
+    app_access.setLevel(access_level)
+    app_access.handlers = [handler]
+    app_access.propagate = False
 
 
 def is_configured() -> bool:

@@ -45,6 +45,13 @@ KEY_TAKEAWAYS_HEADING = "## 关键要点"
 
 DIRECTNESS = "直接以结构化结果作答，不要使用文件或命令工具，不要写待办。"
 
+MATH_NOTATION = (
+    r"公式与数学符号必须用 LaTeX 语法书写，并放在美元符定界符内，以便前端渲染："
+    r"行内公式用 $...$（如 $F_{浮}=G-F^{\prime}$、$p=\rho g h$），独立公式用 $$...$$。"
+    r"下标用 _{}（如 $F_{浮}$），数值与单位用 \text{} 包裹（如 $5\text{N}$）。"
+    r"不要把公式、下标或单位写成纯文本（如 F浮、5N）。"
+)
+
 PLANNER_SYSTEM = (
     "你是一名专业的学习规划师。根据用户提供的主题或学习资料，"
     "设计一份结构化的学习计划。\n"
@@ -64,6 +71,7 @@ CONTENT_SYSTEM = (
     "- 结尾必须包含一个标题为「## 关键要点」的小节，用 3~6 条简洁要点总结。\n"
     "- 直接以消息形式输出 Markdown，不要使用文件或命令工具。\n"
     "- 输出语言与计划语言保持一致。\n"
+    + MATH_NOTATION
 )
 
 QUIZ_SYSTEM = (
@@ -74,6 +82,7 @@ QUIZ_SYSTEM = (
     "- short 题给出 modelAnswer 与 2~5 条 keyPoints，以及 explanation。\n"
     "- 输出语言与计划语言保持一致。\n"
     + DIRECTNESS
+    + MATH_NOTATION
 )
 
 GRADER_SYSTEM = (
@@ -83,6 +92,7 @@ GRADER_SYSTEM = (
     "- 给出 totalScore、maxScore 与整体 assessment（优势/不足/建议/等级）。\n"
     "- 简答题按要点命中度给分；输出语言与计划语言保持一致。\n"
     + DIRECTNESS
+    + MATH_NOTATION
 )
 
 COACH_SYSTEM = (

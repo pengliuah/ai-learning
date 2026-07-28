@@ -196,3 +196,16 @@ def test_author_content_stream_splits_key_takeaways(monkeypatch):
     assert isinstance(content, Content)
     assert "\u5173\u952e\u8981\u70b9" not in content.markdown
     assert content.keyTakeaways == ["point one", "point two"]
+
+
+# ----- math notation in prompts -----
+
+def test_system_prompts_require_latex_math():
+    """feedback/assessment formulas must use $...$ LaTeX so they render as
+    typeset math on the results page, not plain text like "F浮=G-F"
+    (bug: 批改结果总结栏/反馈里的公式显示异常)."""
+    for prompt in (agent_mod.QUIZ_SYSTEM, agent_mod.GRADER_SYSTEM, agent_mod.CONTENT_SYSTEM):
+        assert "$...$" in prompt, "prompt must require $...$ inline math delimiters"
+        # LaTeX backslashes must stay literal (not escape-processed into CR/tab)
+        assert r"\rho" in prompt, "prompt must include \\rho with a literal backslash"
+        assert r"\text" in prompt, "prompt must include \\text with a literal backslash"

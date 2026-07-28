@@ -21,3 +21,8 @@ __pycache__/
 backend/data/*.json
 # Android SDK (local)
 .android-sdk/
+
+# SSL certs (never commit)
+nginx/ssl/*.pem
+nginx/ssl/*.key
+nginx/ssl/*.crt

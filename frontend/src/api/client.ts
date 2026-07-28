@@ -5,7 +5,7 @@ const API_BASE_HISTORY_KEY = "zhixue_api_base_history";
 const HISTORY_MAX = 10;
 
 /** 默认后端地址（含 /api）。未在 localStorage / VITE_API_BASE 覆盖时使用。 */
-export const DEFAULT_API_BASE = "http://47.93.124.101:9001/api";
+export const DEFAULT_API_BASE = "/api";
 
 export function getApiBase(): string {
   return localStorage.getItem(API_BASE_KEY) || import.meta.env.VITE_API_BASE || DEFAULT_API_BASE;

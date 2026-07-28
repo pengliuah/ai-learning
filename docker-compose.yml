@@ -1,8 +1,9 @@
 services:
   zhixue:
     build: .
-    ports:
-      - "8000:8000"
+    # Nginx 反向代理访问; 不再直接暴露到宿主机
+    expose:
+      - "8000"
     volumes:
       - ./backend/data:/app/backend/data
     environment:
@@ -10,4 +11,16 @@ services:
       - ARK_MODEL=${ARK_MODEL:-doubao-1.5-pro-32k}
       - ARK_BASE_URL=${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/zhixue.conf:/etc/nginx/conf.d/zhixue.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - zhixue
     restart: unless-stopped

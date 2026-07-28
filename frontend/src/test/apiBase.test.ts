@@ -14,7 +14,7 @@ beforeEach(() => {
 
 describe("api base storage", () => {
   it("defaults to the configured remote backend", () => {
-    expect(DEFAULT_API_BASE).toBe("http://47.93.124.101:9001/api");
+    expect(DEFAULT_API_BASE).toBe("/api");
     expect(getApiBase()).toBe(DEFAULT_API_BASE);
   });
 

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Loader2, FileText, ListChecks, Sparkles,
-  CheckCircle2, XCircle, ArrowRight, RotateCcw, BookOpen,
+  CheckCircle2, XCircle, ArrowRight, RotateCcw, BookOpen, RefreshCw,
 } from "lucide-react";
 import { Markdown } from "../components/Markdown";
 import { usePlan, useGenerateQuiz, useGradeQuiz, useSaveAnswers, PLAN_KEYS } from "../hooks/usePlans";
@@ -185,6 +185,15 @@ export function ModuleDetail() {
 
               {hasContent && !streaming && (
                 <div>
+                  <div className="mb-3 flex justify-end">
+                    <button
+                      onClick={handleGenerateContent}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      重新生成
+                    </button>
+                  </div>
                   <div className="prose prose-sm max-w-none">
                     <Markdown>{module.content!.markdown}</Markdown>
                   </div>
@@ -228,6 +237,24 @@ export function ModuleDetail() {
 
               {hasQuiz && (
                 <div className="space-y-4">
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => generateQuiz.mutate(
+                        { planId: planId!, moduleId: moduleId! },
+                        { onSuccess: () => {
+                          setAnswers({});
+                          answersRef.current = {};
+                          loadedKey.current = null;
+                          setRedoing(false);
+                        } },
+                      )}
+                      disabled={generateQuiz.isPending}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {generateQuiz.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      重新生成测验
+                    </button>
+                  </div>
                   {module.quiz!.questions.map((q, i) => (
                     <div key={q.id} className="rounded-lg border border-gray-200 bg-white p-4">
                       <p className="mb-3 text-sm font-medium text-gray-900">

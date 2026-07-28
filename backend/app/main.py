@@ -283,6 +283,10 @@ def generate_quiz(plan_id: str, module_id: str):
 
     def mutate(m):
         m.quiz = quiz
+        # Regenerating the quiz invalidates any prior grading result and saved
+        # draft answers (they reference old question ids).
+        m.result = None
+        m.answers = None
 
     logger.info("generate_quiz: plan_id=%s module_id=%s questions=%d", plan_id, module_id, len(quiz.questions))
     return store.update_module(plan_id, module_id, mutate)

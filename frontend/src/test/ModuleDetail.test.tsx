@@ -264,4 +264,58 @@ describe('ModuleDetail', () => {
     expect(container.textContent).not.toContain('$')
   })
 
+  it("shows a regenerate button when content already exists", async () => {
+    const doc = buildDoc([
+      buildModule({
+        id: "m1",
+        content: { markdown: "# existing content", keyTakeaways: [] },
+      }),
+    ])
+    vi.mocked(api.getPlan).mockResolvedValue(doc)
+    const { findByText } = renderAtRoute(
+      <ModuleDetail />,
+      "/plans/:planId/modules/:moduleId",
+      "/plans/plan-1/modules/m1",
+    )
+    await findByText("重新生成")
+  })
+
+  it("shows a regenerate button when quiz already exists", async () => {
+    const doc = buildDoc([buildModule({ id: "m1", quiz: sampleQuiz() })])
+    vi.mocked(api.getPlan).mockResolvedValue(doc)
+    const { findByText } = renderAtRoute(
+      <ModuleDetail />,
+      "/plans/:planId/modules/:moduleId",
+      "/plans/plan-1/modules/m1",
+    )
+    fireEvent.click(await findByText("测验"))
+    await findByText("重新生成测验")
+  })
+
+  it("regenerating quiz calls the API and shows new questions", async () => {
+    const doc = buildDoc([buildModule({ id: "m1", quiz: sampleQuiz() })])
+    vi.mocked(api.getPlan).mockResolvedValue(doc)
+    const regenerated = buildDoc([
+      buildModule({
+        id: "m1",
+        quiz: {
+          questions: [
+            { id: "q1", type: "mcq", prompt: "new question", options: ["a", "b"], answer: "a", modelAnswer: null, keyPoints: [], explanation: "" },
+          ],
+        },
+      }),
+    ])
+    vi.mocked(api.generateQuiz).mockResolvedValue(regenerated)
+    const { findByText } = renderAtRoute(
+      <ModuleDetail />,
+      "/plans/:planId/modules/:moduleId",
+      "/plans/plan-1/modules/m1",
+    )
+    fireEvent.click(await findByText("测验"))
+    fireEvent.click(await findByText("重新生成测验"))
+    await waitFor(() => expect(vi.mocked(api.generateQuiz)).toHaveBeenCalledWith("plan-1", "m1"))
+    await findByText("new question")
+  })
+
+
 })

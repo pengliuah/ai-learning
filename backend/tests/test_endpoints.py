@@ -95,6 +95,31 @@ def test_generate_and_get_quiz(client, fake_coach, seeded_doc):
     assert len(r2.json()["questions"]) == 2
 
 
+def test_regenerate_quiz_clears_result_and_answers(client, fake_coach, seeded_doc):
+    """Regenerating a quiz must wipe the prior result + draft answers
+    (they reference old question ids)."""
+    fake_coach.quiz = make_quiz()
+    fake_coach.result = make_result()
+    mid = seeded_doc.plan.modules[0].id
+    base = f"/api/plans/{seeded_doc.id}/modules/{mid}"
+    # Generate quiz, save answers, grade -> result set, status completed
+    client.post(f"{base}/quiz")
+    client.put(f"{base}/answers", json={"answers": {"q1": "2", "q2": "text"}})
+    client.post(f"{base}/grade")
+    graded = client.get(f"/api/plans/{seeded_doc.id}").json()
+    mod = next(m for m in graded["plan"]["modules"] if m["id"] == mid)
+    assert mod["result"] is not None
+    assert mod["answers"] is not None
+
+    # Regenerate quiz
+    r = client.post(f"{base}/quiz")
+    assert r.status_code == 200
+    mod = next(m for m in r.json()["plan"]["modules"] if m["id"] == mid)
+    assert mod["quiz"] is not None
+    assert mod["result"] is None
+    assert mod["answers"] is None
+
+
 def test_get_quiz_404_when_missing(client, seeded_doc):
     mid = seeded_doc.plan.modules[0].id
     assert client.get(f"/api/plans/{seeded_doc.id}/modules/{mid}/quiz").status_code == 404

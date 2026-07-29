@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 body {
-  @apply bg-gray-50 text-gray-900 antialiased;
+  @apply bg-gray-50 text-gray-900 antialiased dark:bg-gray-900 dark:text-gray-100;
 }
 
 /* KaTeX tags CJK characters with .cjk_fallback but ships no font for them.

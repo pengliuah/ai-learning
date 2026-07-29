@@ -46,14 +46,14 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
-      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg dark:bg-gray-800" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-900">后端地址</h2>
-          <button onClick={onClose} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">后端地址</h2>
+          <button onClick={onClose} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-300">
             <X className="h-4 w-4" />
           </button>
         </div>
-        <p className="mb-2 text-xs text-gray-500">
+        <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
           输入后端服务的完整地址（含 /api），例如 {DEFAULT_API_BASE}
         </p>
 
@@ -68,13 +68,13 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                 if (e.key === "Enter") save();
               }}
               placeholder={DEFAULT_API_BASE}
-              className="w-full rounded-l-md border border-r-0 border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full rounded-l-md border border-r-0 border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
               autoFocus
             />
             <button
               type="button"
               onClick={() => setOpen((o) => !o)}
-              className="inline-flex items-center rounded-r-md border border-gray-300 bg-gray-50 px-2 text-gray-500 hover:bg-gray-100"
+              className="inline-flex items-center rounded-r-md border border-gray-300 bg-gray-50 px-2 text-gray-500 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600"
               title="历史地址"
               aria-label="历史地址"
             >
@@ -83,16 +83,16 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           </div>
 
           {open && (
-            <div className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+            <div className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800">
               {history.length === 0 ? (
-                <p className="px-3 py-2 text-xs text-gray-400">暂无历史地址</p>
+                <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">暂无历史地址</p>
               ) : (
                 history.map((u) => (
-                  <div key={u} className="flex items-center justify-between px-3 py-1.5 hover:bg-gray-50">
+                  <div key={u} className="flex items-center justify-between px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700">
                     <button
                       type="button"
                       onClick={() => pick(u)}
-                      className="flex-1 truncate text-left text-sm text-gray-700"
+                      className="flex-1 truncate text-left text-sm text-gray-700 dark:text-gray-300"
                       title={u}
                     >
                       {u}
@@ -100,7 +100,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                     <button
                       type="button"
                       onClick={() => remove(u)}
-                      className="ml-2 rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                      className="ml-2 rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/40 dark:hover:text-red-400"
                       title="删除"
                       aria-label="删除"
                     >
@@ -114,12 +114,12 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="mt-4 flex items-center justify-end gap-2">
-          <button onClick={reset} className="rounded-md px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100">
+          <button onClick={reset} className="rounded-md px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700">
             恢复默认
           </button>
           <button
             onClick={save}
-            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600"
           >
             保存
           </button>

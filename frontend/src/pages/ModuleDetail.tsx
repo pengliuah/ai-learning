@@ -83,7 +83,7 @@ export function ModuleDetail() {
     }
   };
 
-  if (!doc || !module) return <p className="text-sm text-gray-500">加载中...</p>;
+  if (!doc || !module) return <p className="text-sm text-gray-500 dark:text-gray-400">加载中...</p>;
 
   const hasContent = !!module.content;
   const hasQuiz = !!module.quiz;
@@ -96,28 +96,28 @@ export function ModuleDetail() {
     <div>
       <button
         onClick={() => navigate(`/plans/${planId}`)}
-        className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900"
+        className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
       >
         <ArrowLeft className="h-4 w-4" />
         返回计划
       </button>
 
       {/* Module header */}
-      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4">
+      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center gap-2">
-          <h1 className="text-lg font-semibold text-gray-900">{module.title}</h1>
+          <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{module.title}</h1>
           <StatusBadge status={module.status} />
         </div>
-        <p className="mt-1 text-sm text-gray-600">{module.summary}</p>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{module.summary}</p>
         {module.objectives.length > 0 && (
           <div className="mt-3">
-            <p className="mb-1 text-xs font-medium text-gray-500">学习目标</p>
-            <ul className="list-inside list-disc space-y-0.5 text-sm text-gray-600">
+            <p className="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">学习目标</p>
+            <ul className="list-inside list-disc space-y-0.5 text-sm text-gray-600 dark:text-gray-300">
               {module.objectives.map((obj, i) => <li key={i}>{obj}</li>)}
             </ul>
           </div>
         )}
-        <div className="mt-3 flex items-center gap-3 text-xs text-gray-500">
+        <div className="mt-3 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
           <DifficultyBadge difficulty={module.difficulty} />
           <span>{module.minutes} 分钟</span>
         </div>
@@ -133,11 +133,11 @@ export function ModuleDetail() {
       ) : (
         <>
           {/* Tabs */}
-          <div className="mb-4 inline-flex rounded-md border border-gray-200 p-0.5">
+          <div className="mb-4 inline-flex rounded-md border border-gray-200 p-0.5 dark:border-gray-700">
             <button
               onClick={() => setTab("content")}
               className={`inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition ${
-                tab === "content" ? "bg-indigo-600 text-white" : "text-gray-600 hover:text-gray-900"
+                tab === "content" ? "bg-indigo-600 text-white dark:bg-indigo-500" : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
               }`}
             >
               <FileText className="h-3.5 w-3.5" />
@@ -146,7 +146,7 @@ export function ModuleDetail() {
             <button
               onClick={() => setTab("quiz")}
               className={`inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition ${
-                tab === "quiz" ? "bg-indigo-600 text-white" : "text-gray-600 hover:text-gray-900"
+                tab === "quiz" ? "bg-indigo-600 text-white dark:bg-indigo-500" : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
               }`}
             >
               <ListChecks className="h-3.5 w-3.5" />
@@ -160,7 +160,7 @@ export function ModuleDetail() {
               {!hasContent && !streaming && (
                 <button
                   onClick={handleGenerateContent}
-                  className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                  className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600"
                 >
                   <Sparkles className="h-4 w-4" />
                   生成学习内容
@@ -169,18 +169,18 @@ export function ModuleDetail() {
 
               {streaming && (
                 <div>
-                  <div className="mb-2 flex items-center gap-2 text-sm text-indigo-600">
+                  <div className="mb-2 flex items-center gap-2 text-sm text-indigo-600 dark:text-indigo-400">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     生成中...
                   </div>
-                  <div className="prose prose-sm max-w-none">
+                  <div className="prose prose-sm max-w-none dark:prose-invert">
                     <Markdown>{streamText}</Markdown>
                   </div>
                 </div>
               )}
 
               {streamError && (
-                <p className="text-sm text-red-600">生成失败：{streamError}</p>
+                <p className="text-sm text-red-600 dark:text-red-400">生成失败：{streamError}</p>
               )}
 
               {hasContent && !streaming && (
@@ -188,22 +188,22 @@ export function ModuleDetail() {
                   <div className="mb-3 flex justify-end">
                     <button
                       onClick={handleGenerateContent}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
                     >
                       <RefreshCw className="h-4 w-4" />
                       重新生成
                     </button>
                   </div>
-                  <div className="prose prose-sm max-w-none">
+                  <div className="prose prose-sm max-w-none dark:prose-invert">
                     <Markdown>{module.content!.markdown}</Markdown>
                   </div>
                   {module.content!.keyTakeaways.length > 0 && (
-                    <div className="mt-4 rounded-lg border border-indigo-100 bg-indigo-50 p-4">
-                      <p className="mb-2 text-sm font-medium text-indigo-900">关键要点</p>
-                      <ul className="space-y-1 text-sm text-indigo-800">
+                    <div className="mt-4 rounded-lg border border-indigo-100 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-900/30">
+                      <p className="mb-2 text-sm font-medium text-indigo-900 dark:text-indigo-200">关键要点</p>
+                      <ul className="space-y-1 text-sm text-indigo-800 dark:text-indigo-300">
                         {module.content!.keyTakeaways.map((p, i) => (
                           <li key={i} className="flex gap-2">
-                            <span className="text-indigo-400">{i + 1}.</span>
+                            <span className="text-indigo-400 dark:text-indigo-500">{i + 1}.</span>
                             <Markdown inline>{p}</Markdown>
                           </li>
                         ))}
@@ -222,7 +222,7 @@ export function ModuleDetail() {
                 <button
                   onClick={() => generateQuiz.mutate({ planId: planId!, moduleId: moduleId! })}
                   disabled={generateQuiz.isPending}
-                  className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 dark:bg-indigo-500 dark:hover:bg-indigo-600"
                 >
                   {generateQuiz.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                   {generateQuiz.isPending ? "生成中..." : "生成测验"}
@@ -230,7 +230,7 @@ export function ModuleDetail() {
               )}
 
               {generateQuiz.isError && (
-                <p className="mt-2 text-sm text-red-600">
+                <p className="mt-2 text-sm text-red-600 dark:text-red-400">
                   生成失败：{(generateQuiz.error as Error).message}
                 </p>
               )}
@@ -249,17 +249,17 @@ export function ModuleDetail() {
                         } },
                       )}
                       disabled={generateQuiz.isPending}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
                     >
                       {generateQuiz.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                       重新生成测验
                     </button>
                   </div>
                   {module.quiz!.questions.map((q, i) => (
-                    <div key={q.id} className="rounded-lg border border-gray-200 bg-white p-4">
-                      <p className="mb-3 text-sm font-medium text-gray-900">
+                    <div key={q.id} className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+                      <p className="mb-3 text-sm font-medium text-gray-900 dark:text-gray-100">
                         {i + 1}. <Markdown inline>{q.prompt}</Markdown>
-                        <span className="ml-2 text-xs text-gray-400">
+                        <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">
                           {q.type === "mcq" ? "单选" : "简答"}
                         </span>
                       </p>
@@ -271,8 +271,8 @@ export function ModuleDetail() {
                               key={opt}
                               className={`flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm transition ${
                                 answers[q.id] === opt
-                                  ? "border-indigo-500 bg-indigo-50"
-                                  : "border-gray-200 hover:border-gray-300"
+                                  ? "border-indigo-500 bg-indigo-50 dark:border-indigo-500 dark:bg-indigo-900/30"
+                                  : "border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600"
                               }`}
                             >
                               <input
@@ -280,9 +280,9 @@ export function ModuleDetail() {
                                 name={q.id}
                                 checked={answers[q.id] === opt}
                                 onChange={() => updateAnswer(q.id, opt)}
-                                className="text-indigo-600"
+                                className="text-indigo-600 dark:text-indigo-500"
                               />
-                              <span className="text-gray-700"><Markdown inline>{opt}</Markdown></span>
+                              <span className="text-gray-700 dark:text-gray-300"><Markdown inline>{opt}</Markdown></span>
                             </label>
                           ))}
                         </div>
@@ -292,7 +292,7 @@ export function ModuleDetail() {
                           onChange={(e) => updateAnswer(q.id, e.target.value)}
                           rows={4}
                           placeholder="输入你的答案..."
-                          className="w-full rounded-md border border-gray-300 p-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          className="w-full rounded-md border border-gray-300 bg-white p-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                         />
                       )}
                     </div>
@@ -304,14 +304,14 @@ export function ModuleDetail() {
                       { onSuccess: () => setRedoing(false) },
                     )}
                     disabled={gradeQuiz.isPending}
-                    className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                    className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 dark:bg-indigo-500 dark:hover:bg-indigo-600"
                   >
                     {gradeQuiz.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                     {gradeQuiz.isPending ? "批改中..." : "提交批改"}
                   </button>
 
                   {gradeQuiz.isError && (
-                    <p className="text-sm text-red-600">
+                    <p className="text-sm text-red-600 dark:text-red-400">
                       批改失败：{(gradeQuiz.error as Error).message}
                     </p>
                   )}
@@ -345,17 +345,17 @@ function ResultsView({
   return (
     <div className="space-y-4">
       {/* Score */}
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm text-gray-500">批改结果</p>
-            <p className="mt-1 text-3xl font-bold text-gray-900">
-              {r.totalScore}<span className="text-lg text-gray-400">/{r.maxScore}</span>
-              <span className="ml-2 text-base font-normal text-gray-500">{pct}分</span>
+            <p className="text-sm text-gray-500 dark:text-gray-400">批改结果</p>
+            <p className="mt-1 text-3xl font-bold text-gray-900 dark:text-gray-100">
+              {r.totalScore}<span className="text-lg text-gray-400 dark:text-gray-500">/{r.maxScore}</span>
+              <span className="ml-2 text-base font-normal text-gray-500 dark:text-gray-400">{pct}分</span>
             </p>
           </div>
           <div className={`flex h-16 w-16 items-center justify-center rounded-full text-2xl font-bold ${
-            pct >= 80 ? "bg-green-100 text-green-600" : pct >= 60 ? "bg-amber-100 text-amber-600" : "bg-red-100 text-red-600"
+            pct >= 80 ? "bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400" : pct >= 60 ? "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400" : "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400"
           }`}>
             {pct}
           </div>
@@ -364,21 +364,21 @@ function ResultsView({
 
       {/* Assessment */}
       <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-green-200 bg-green-50 p-3">
-          <p className="mb-2 text-xs font-medium text-green-800">优势</p>
-          <ul className="space-y-1 text-xs text-green-700">
+        <div className="rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-900/20">
+          <p className="mb-2 text-xs font-medium text-green-800 dark:text-green-300">优势</p>
+          <ul className="space-y-1 text-xs text-green-700 dark:text-green-400">
             {r.assessment.strengths.map((s, i) => <li key={i}><Markdown inline>{s}</Markdown></li>)}
           </ul>
         </div>
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-          <p className="mb-2 text-xs font-medium text-red-800">不足</p>
-          <ul className="space-y-1 text-xs text-red-700">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
+          <p className="mb-2 text-xs font-medium text-red-800 dark:text-red-300">不足</p>
+          <ul className="space-y-1 text-xs text-red-700 dark:text-red-400">
             {r.assessment.weaknesses.map((s, i) => <li key={i}><Markdown inline>{s}</Markdown></li>)}
           </ul>
         </div>
-        <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
-          <p className="mb-2 text-xs font-medium text-indigo-800">建议</p>
-          <ul className="space-y-1 text-xs text-indigo-700">
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-800 dark:bg-indigo-900/20">
+          <p className="mb-2 text-xs font-medium text-indigo-800 dark:text-indigo-300">建议</p>
+          <ul className="space-y-1 text-xs text-indigo-700 dark:text-indigo-400">
             {r.assessment.recommendations.map((s, i) => <li key={i}><Markdown inline>{s}</Markdown></li>)}
           </ul>
         </div>
@@ -386,7 +386,7 @@ function ResultsView({
 
       {/* Per-question review */}
       <div className="space-y-3">
-        <p className="text-sm font-medium text-gray-700">逐题回顾</p>
+        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">逐题回顾</p>
         {r.results.map((qr, i) => {
           const q = quiz.questions.find((qq) => qq.id === qr.questionId);
           if (!q) return null;
@@ -394,36 +394,38 @@ function ResultsView({
             <div
               key={qr.questionId}
               className={`rounded-lg border p-4 ${
-                qr.correct ? "border-green-200 bg-green-50/50" : "border-red-200 bg-red-50/50"
+                qr.correct
+                  ? "border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-900/20"
+                  : "border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-900/20"
               }`}
             >
               <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-medium text-gray-900">
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
                   {i + 1}. <Markdown inline>{q.prompt}</Markdown>
                 </p>
                 <div className="flex items-center gap-1.5 whitespace-nowrap text-xs">
                   {qr.correct ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                   ) : (
-                    <XCircle className="h-4 w-4 text-red-600" />
+                    <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
                   )}
-                  <span className="font-medium text-gray-700">{qr.score}/{qr.maxScore}</span>
+                  <span className="font-medium text-gray-700 dark:text-gray-300">{qr.score}/{qr.maxScore}</span>
                 </div>
               </div>
 
-              <div className="mt-2 space-y-1 text-xs text-gray-600">
-                <p><span className="text-gray-400">你的答案：</span>{qr.studentAnswer ? <Markdown inline>{qr.studentAnswer}</Markdown> : "（未作答）"}</p>
+              <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                <p><span className="text-gray-400 dark:text-gray-500">你的答案：</span>{qr.studentAnswer ? <Markdown inline>{qr.studentAnswer}</Markdown> : "（未作答）"}</p>
                 {q.type === "mcq" ? (
-                  <p><span className="text-gray-400">正确答案：</span>{q.answer && <Markdown inline>{q.answer}</Markdown>}</p>
+                  <p><span className="text-gray-400 dark:text-gray-500">正确答案：</span>{q.answer && <Markdown inline>{q.answer}</Markdown>}</p>
                 ) : (
                   <>
-                    <p><span className="text-gray-400">参考答案：</span>{q.modelAnswer && <Markdown inline>{q.modelAnswer}</Markdown>}</p>
+                    <p><span className="text-gray-400 dark:text-gray-500">参考答案：</span>{q.modelAnswer && <Markdown inline>{q.modelAnswer}</Markdown>}</p>
                     {q.keyPoints.length > 0 && (
-                      <p><span className="text-gray-400">要点：</span><Markdown inline>{q.keyPoints.join("、")}</Markdown></p>
+                      <p><span className="text-gray-400 dark:text-gray-500">要点：</span><Markdown inline>{q.keyPoints.join("、")}</Markdown></p>
                     )}
                   </>
                 )}
-                <p><span className="text-gray-400">反馈：</span><Markdown inline>{qr.feedback}</Markdown></p>
+                <p><span className="text-gray-400 dark:text-gray-500">反馈：</span><Markdown inline>{qr.feedback}</Markdown></p>
               </div>
             </div>
           );
@@ -434,14 +436,14 @@ function ResultsView({
       <div className="flex flex-wrap items-center gap-3 pt-2">
         <button
           onClick={onRedo}
-          className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
         >
           <RotateCcw className="h-4 w-4" />
           重做
         </button>
         <button
           onClick={onRestudy}
-          className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
         >
           <BookOpen className="h-4 w-4" />
           重新学习
@@ -449,7 +451,7 @@ function ResultsView({
         {onNext && (
           <button
             onClick={onNext}
-            className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+            className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600"
           >
             下一模块
             <ArrowRight className="h-4 w-4" />

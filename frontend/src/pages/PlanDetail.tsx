@@ -16,8 +16,8 @@ export function PlanDetail() {
   const { data: doc, isLoading } = usePlan(planId);
   const deletePlan = useDeletePlan();
 
-  if (isLoading) return <p className="text-sm text-gray-500">加载中...</p>;
-  if (!doc) return <p className="text-sm text-gray-500">计划不存在</p>;
+  if (isLoading) return <p className="text-sm text-gray-500 dark:text-gray-400">加载中...</p>;
+  if (!doc) return <p className="text-sm text-gray-500 dark:text-gray-400">计划不存在</p>;
 
   const { plan } = doc;
   const doneCount = plan.modules.filter((m) => m.status === "completed").length;
@@ -28,7 +28,7 @@ export function PlanDetail() {
       <div className="mb-4 flex items-center justify-between">
         <button
           onClick={() => navigate("/")}
-          className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900"
+          className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
         >
           <ArrowLeft className="h-4 w-4" />
           返回
@@ -39,18 +39,18 @@ export function PlanDetail() {
               deletePlan.mutate(planId!, { onSuccess: () => navigate("/") });
             }
           }}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-gray-400 hover:bg-red-50 hover:text-red-600"
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/40 dark:hover:text-red-400"
         >
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4">
-        <h1 className="text-lg font-semibold text-gray-900">{plan.title}</h1>
-        {plan.summary && <p className="mt-1 text-sm text-gray-600">{plan.summary}</p>}
-        <p className="mt-2 text-sm text-gray-500">{plan.goal}</p>
+      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+        <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{plan.title}</h1>
+        {plan.summary && <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{plan.summary}</p>}
+        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{plan.goal}</p>
 
-        <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-gray-500">
+        <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
           <span>等级：{LEVEL_LABEL[plan.level] || plan.level}</span>
           <span className="inline-flex items-center gap-1">
             <Clock className="h-3.5 w-3.5" />
@@ -67,20 +67,20 @@ export function PlanDetail() {
           <button
             key={module.id}
             onClick={() => navigate(`/plans/${planId}/modules/${module.id}`)}
-            className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-left hover:border-indigo-300"
+            className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-left hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-indigo-600"
           >
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">{idx + 1}</span>
-                <span className="font-medium text-gray-900">{module.title}</span>
+                <span className="text-xs text-gray-400 dark:text-gray-500">{idx + 1}</span>
+                <span className="font-medium text-gray-900 dark:text-gray-100">{module.title}</span>
               </div>
               <div className="mt-1.5 flex items-center gap-2">
                 <StatusBadge status={module.status} />
                 <DifficultyBadge difficulty={module.difficulty} />
-                <span className="text-xs text-gray-500">{module.minutes} 分钟</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">{module.minutes} 分钟</span>
               </div>
             </div>
-            <ChevronRight className="h-4 w-4 text-gray-400" />
+            <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500" />
           </button>
         ))}
       </div>

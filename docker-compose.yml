@@ -17,10 +17,8 @@ services:
     image: nginx:alpine
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./nginx/zhixue.conf:/etc/nginx/conf.d/zhixue.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       - zhixue
     restart: unless-stopped

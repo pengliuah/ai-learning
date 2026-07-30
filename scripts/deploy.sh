@@ -16,9 +16,7 @@
 #
 # 首次运行前:
 #   - root 需能访问 git@github.com:pengliuah/zhixue.git (部署用 SSH key 放在 /root/.ssh)
-#   - 在 /opt/zhixue/.env 填入 ARK_API_KEY (可参考 .env.example)
-#   - (可选) 首次部署后若需自定义 docker-compose.yml, 直接改 /opt/zhixue/docker-compose.yml,
-#     下次部署第 2 步会自动备份、第 4 步恢复, 保证配置不被仓库版本覆盖
+#   - 编辑 /opt/zhixue/docker-compose.yml 填入 ARK_API_KEY
 #
 set -euo pipefail
 
@@ -62,9 +60,8 @@ else
 fi
 
 # ---- 2. 备份 docker-compose.yml 到 /opt ----
-# 保存服务器上当前的自定义 compose 配置 (如硬编码 ARK_API_KEY 等)。
-# 第 3 步 reset --hard 会把 compose 还原为仓库版本, 第 4 步用此备份覆盖回去,
-# 保证服务器配置不被覆盖。
+# 保存服务器上当前的自定义 compose 配置 (如已填入 ARK_API_KEY)。
+# 第 3 步 reset --hard 会把 compose 还原为仓库版本, 第 4 步用此备份覆盖回去。
 if [ -f "$COMPOSE_FILE" ]; then
   ts=$(date +%Y%m%d-%H%M%S)
   cp -a "$COMPOSE_FILE" "$BACKUP_DIR/docker-compose.yml.bak.$ts"   # 带时间戳归档 (第 4 步恢复后会清理)
@@ -77,10 +74,9 @@ fi
 # ---- 3. 拉取最新代码到 /opt/zhixue ----
 log "3/5 拉取最新代码到 $APP_DIR"
 if [ -d "$APP_DIR/.git" ]; then
-  # 已存在: fetch + reset --hard 刷新到 origin/$BRANCH.
-  # reset --hard 只覆盖跟踪文件, 保留 gitignored 持久状态 (.env 密钥, backend/data
-  # 学习数据); 仓库自带的 docker-compose.yml 会被还原为版本库版本, 随后第 4 步用
-  # 自定义备份覆盖。
+  # fetch + reset --hard 刷新到 origin/$BRANCH.
+  # reset --hard 只覆盖跟踪文件, 保留 gitignored 持久状态 (backend/data 学习数据);
+  # 仓库自带的 docker-compose.yml 会被还原为版本库版本, 随后第 4 步用自定义备份覆盖。
   git -C "$APP_DIR" fetch --all --prune
   git -C "$APP_DIR" reset --hard "origin/$BRANCH"
   log "已更新现有检出至 origin/$BRANCH"
@@ -102,11 +98,6 @@ if [ -f "$BACKUP_FILE" ]; then
   log "4/5 已清理备份文件 $BACKUP_DIR/docker-compose.yml.bak*"
 else
   log "4/5 无备份可恢复 ($BACKUP_FILE 不存在), 使用仓库自带 compose 文件"
-fi
-
-# 密钥提醒: .env 与环境变量都没有时, LLM 端点会 503 (除非 compose 内硬编码了 ARK_API_KEY)
-if [ ! -f "$APP_DIR/.env" ] && [ -z "${ARK_API_KEY:-}" ]; then
-  warn "未找到 $APP_DIR/.env 且环境变量 ARK_API_KEY 未设置; 若 compose 未硬编码密钥, LLM 端点将返回 503"
 fi
 
 # ---- 5. 构建新镜像并重启服务 ----

@@ -7,10 +7,10 @@ services:
     volumes:
       - ./backend/data:/app/backend/data
     environment:
-      - ARK_API_KEY=${ARK_API_KEY}
-      - ARK_MODEL=${ARK_MODEL:-doubao-1.5-pro-32k}
-      - ARK_BASE_URL=${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ARK_API_KEY=                    # ← 填入火山方舟 API Key
+      - ARK_MODEL=doubao-1.5-pro-32k
+      - ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+      - LOG_LEVEL=INFO
     restart: unless-stopped
 
   nginx:

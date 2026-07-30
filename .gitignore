@@ -3,7 +3,6 @@ node_modules/
 dist/
 .env
 .env.*
-!.env.example
 *.log
 .DS_Store
 
@@ -26,3 +25,7 @@ backend/data/*.json
 nginx/ssl/*.pem
 nginx/ssl/*.key
 nginx/ssl/*.crt
+
+# server-specific compose overrides (never commit, preserved by reset --hard)
+docker-compose.override.yml
+docker-compose.override.*.yml

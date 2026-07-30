@@ -1,41 +1,10 @@
 import type { Document, PlanListItem, Quiz, AnswersState, Content, GradingResult } from "./types";
 
-const API_BASE_KEY = "zhixue_api_base";
-
-/** 默认后端地址（含 /api）。未在 localStorage 覆盖时使用。 */
-export const DEFAULT_API_BASE = "/api";
-
-/** 预设环境。 */
-export interface ApiEnv {
-  label: string;
-  url: string;
-}
-
-export const PRESET_ENVS: ApiEnv[] = [
-  { label: "本地 (代理)", url: "/api" },
-  { label: "本地 (直连)", url: "http://localhost:8000/api" },
-];
-
-export function getApiBase(): string {
-  return localStorage.getItem(API_BASE_KEY) || DEFAULT_API_BASE;
-}
-
-/** 设置当前后端地址；无协议且非相对路径时自动补 http://。 */
-export function setApiBase(url: string): void {
-  const trimmed = url.trim();
-  if (!trimmed) {
-    localStorage.removeItem(API_BASE_KEY);
-    return;
-  }
-  const normalized =
-    trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("/")
-      ? trimmed
-      : "http://" + trimmed;
-  localStorage.setItem(API_BASE_KEY, normalized);
-}
+/** 后端 API 基址。开发时走 Vite 代理，生产时走 nginx 反代，均为 /api。 */
+const API_BASE = "/api";
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(getApiBase() + url, init);
+  const res = await fetch(API_BASE + url, init);
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     throw new Error(detail || `HTTP ${res.status}`);
@@ -95,7 +64,7 @@ export const api = {
     moduleId: string,
     onDelta: (text: string) => void,
   ): Promise<Document> => {
-    const res = await fetch(`${getApiBase()}/plans/${planId}/modules/${moduleId}/content`, {
+    const res = await fetch(`${API_BASE}/plans/${planId}/modules/${moduleId}/content`, {
       method: "POST",
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

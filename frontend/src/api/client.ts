@@ -14,19 +14,30 @@ export interface ApiEnv {
 }
 
 export const PRESET_ENVS: ApiEnv[] = [
-  { label: "本地", url: "/api" },
+  { label: "本地 (代理)", url: "/api" },
+  { label: "本地 (直连)", url: "http://localhost:8000/api" },
 ];
+
+/** 规范化后端地址: 无协议且非相对路径时自动补 http:// */
+function normalizeUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return trimmed;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("/")) {
+    return trimmed;
+  }
+  return "http://" + trimmed;
+}
 
 export function getApiBase(): string {
   return localStorage.getItem(API_BASE_KEY) || import.meta.env.VITE_API_BASE || DEFAULT_API_BASE;
 }
 
-/** 设置当前后端地址；非空时同时记入历史（便于下次下拉选择）。 */
+/** 设置当前后端地址；非空时规范化并记入历史。 */
 export function setApiBase(url: string): void {
-  const trimmed = url.trim();
-  if (trimmed) {
-    localStorage.setItem(API_BASE_KEY, trimmed);
-    addApiBaseHistory(trimmed);
+  const normalized = normalizeUrl(url);
+  if (normalized) {
+    localStorage.setItem(API_BASE_KEY, normalized);
+    addApiBaseHistory(normalized);
   } else {
     localStorage.removeItem(API_BASE_KEY);
   }

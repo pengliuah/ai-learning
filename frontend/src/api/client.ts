@@ -1,13 +1,11 @@
 import type { Document, PlanListItem, Quiz, AnswersState, Content, GradingResult } from "./types";
 
 const API_BASE_KEY = "zhixue_api_base";
-const API_BASE_HISTORY_KEY = "zhixue_api_base_history";
-const HISTORY_MAX = 10;
 
-/** 默认后端地址（含 /api）。未在 localStorage / VITE_API_BASE 覆盖时使用。 */
+/** 默认后端地址（含 /api）。未在 localStorage 覆盖时使用。 */
 export const DEFAULT_API_BASE = "/api";
 
-/** 预设环境，下拉选择时展示。本地为默认。 */
+/** 预设环境。 */
 export interface ApiEnv {
   label: string;
   url: string;
@@ -18,53 +16,22 @@ export const PRESET_ENVS: ApiEnv[] = [
   { label: "本地 (直连)", url: "http://localhost:8000/api" },
 ];
 
-/** 规范化后端地址: 无协议且非相对路径时自动补 http:// */
-function normalizeUrl(url: string): string {
-  const trimmed = url.trim();
-  if (!trimmed) return trimmed;
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("/")) {
-    return trimmed;
-  }
-  return "http://" + trimmed;
-}
-
 export function getApiBase(): string {
-  return localStorage.getItem(API_BASE_KEY) || import.meta.env.VITE_API_BASE || DEFAULT_API_BASE;
+  return localStorage.getItem(API_BASE_KEY) || DEFAULT_API_BASE;
 }
 
-/** 设置当前后端地址；非空时规范化并记入历史。 */
+/** 设置当前后端地址；无协议且非相对路径时自动补 http://。 */
 export function setApiBase(url: string): void {
-  const normalized = normalizeUrl(url);
-  if (normalized) {
-    localStorage.setItem(API_BASE_KEY, normalized);
-    addApiBaseHistory(normalized);
-  } else {
-    localStorage.removeItem(API_BASE_KEY);
-  }
-}
-
-/** 已保存的后端地址历史（最近优先，去重）。 */
-export function getApiBaseHistory(): string[] {
-  try {
-    const raw = localStorage.getItem(API_BASE_HISTORY_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? (arr.filter((x) => typeof x === "string") as string[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-export function addApiBaseHistory(url: string): void {
   const trimmed = url.trim();
-  if (!trimmed) return;
-  const next = [trimmed, ...getApiBaseHistory().filter((u) => u !== trimmed)].slice(0, HISTORY_MAX);
-  localStorage.setItem(API_BASE_HISTORY_KEY, JSON.stringify(next));
-}
-
-export function removeApiBaseHistory(url: string): void {
-  const next = getApiBaseHistory().filter((u) => u !== url);
-  localStorage.setItem(API_BASE_HISTORY_KEY, JSON.stringify(next));
+  if (!trimmed) {
+    localStorage.removeItem(API_BASE_KEY);
+    return;
+  }
+  const normalized =
+    trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("/")
+      ? trimmed
+      : "http://" + trimmed;
+  localStorage.setItem(API_BASE_KEY, normalized);
 }
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {

@@ -1,33 +1,31 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { SettingsDialog } from "../components/SettingsDialog";
-import { addApiBaseHistory, DEFAULT_API_BASE } from "../api/client";
+import { setApiBase, DEFAULT_API_BASE, PRESET_ENVS } from "../api/client";
 
 beforeEach(() => {
   localStorage.clear();
 });
 
 describe("SettingsDialog", () => {
-  it("uses the default backend address as placeholder and example", () => {
-    const { container } = render(<SettingsDialog onClose={() => {}} />);
-    expect(screen.getByPlaceholderText(DEFAULT_API_BASE)).toBeInTheDocument();
-    expect(container.textContent).toContain(DEFAULT_API_BASE);
+  it("shows all preset environments", () => {
+    render(<SettingsDialog onClose={() => {}} />);
+    for (const env of PRESET_ENVS) {
+      expect(screen.getByText(env.label)).toBeInTheDocument();
+    }
   });
 
-  it("lists saved addresses in the dropdown and deletes an entry", async () => {
-    addApiBaseHistory("http://keep.example/api");
-    addApiBaseHistory("http://delete.example/api");
-
+  it("clicking a preset fills the input", () => {
     render(<SettingsDialog onClose={() => {}} />);
+    const input = screen.getByPlaceholderText(DEFAULT_API_BASE) as HTMLInputElement;
+    fireEvent.click(screen.getByText("本地 (直连)"));
+    expect(input.value).toBe("http://localhost:8000/api");
+  });
 
-    fireEvent.click(screen.getByTitle("选择环境"));
-    expect(await screen.findByText("http://delete.example/api")).toBeInTheDocument();
-    expect(screen.getByText("http://keep.example/api")).toBeInTheDocument();
-
-    fireEvent.click(screen.getAllByTitle("删除")[0]);
-    await waitFor(() =>
-      expect(screen.queryByText("http://delete.example/api")).not.toBeInTheDocument(),
-    );
-    expect(screen.getByText("http://keep.example/api")).toBeInTheDocument();
+  it("shows the current api base in the input on open", () => {
+    setApiBase("http://example.com/api");
+    render(<SettingsDialog onClose={() => {}} />);
+    const input = screen.getByPlaceholderText(DEFAULT_API_BASE) as HTMLInputElement;
+    expect(input.value).toBe("http://example.com/api");
   });
 });

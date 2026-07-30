@@ -20,7 +20,7 @@ describe("SettingsDialog", () => {
 
     render(<SettingsDialog onClose={() => {}} />);
 
-    fireEvent.click(screen.getByTitle("历史地址"));
+    fireEvent.click(screen.getByTitle("选择环境"));
     expect(await screen.findByText("http://delete.example/api")).toBeInTheDocument();
     expect(screen.getByText("http://keep.example/api")).toBeInTheDocument();
 

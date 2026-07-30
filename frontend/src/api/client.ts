@@ -7,6 +7,16 @@ const HISTORY_MAX = 10;
 /** 默认后端地址（含 /api）。未在 localStorage / VITE_API_BASE 覆盖时使用。 */
 export const DEFAULT_API_BASE = "/api";
 
+/** 预设环境，下拉选择时展示。本地为默认。 */
+export interface ApiEnv {
+  label: string;
+  url: string;
+}
+
+export const PRESET_ENVS: ApiEnv[] = [
+  { label: "本地", url: "/api" },
+];
+
 export function getApiBase(): string {
   return localStorage.getItem(API_BASE_KEY) || import.meta.env.VITE_API_BASE || DEFAULT_API_BASE;
 }

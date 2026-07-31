@@ -1,7 +1,13 @@
 import type { Document, PlanListItem, Quiz, AnswersState, Content, GradingResult } from "./types";
 
-/** 后端 API 基址。开发时走 Vite 代理，生产时走 nginx 反代，均为 /api。 */
-const API_BASE = "/api";
+/**
+ * 后端 API 基址。
+ * - 网页端: 留空 -> "/api" (相对路径, 浏览器同源, 由 nginx 反代到后端)。
+ * - App 端: 构建时注入 VITE_API_BASE 为服务器绝对地址 (如 "http://<ip>/api"),
+ *   否则 Capacitor WebView 里 /api 会解析到设备本地 origin 而非服务器。
+ * 末尾斜杠会被去掉, 保证 "/api" 与 "http://x/api/" 拼接路径都不出现双斜杠。
+ */
+const API_BASE = (import.meta.env.VITE_API_BASE || "/api").replace(/\/+$/, "");
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(API_BASE + url, init);

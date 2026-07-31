@@ -23,7 +23,7 @@ set -euo pipefail
 # ===== 可配置项 (可用环境变量覆盖) =====
 APP_DIR=${APP_DIR:-/opt/zhixue}
 REPO_URL=${REPO_URL:-git@github.com:pengliuah/zhixue.git}
-BRANCH=${BRANCH:-test-env}
+BRANCH=${BRANCH:-master}
 BACKUP_DIR=${BACKUP_DIR:-/opt}
 IMAGE=${IMAGE:-zhixue-zhixue}
 # ========================================

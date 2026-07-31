@@ -8,8 +8,18 @@ const mobileDir = resolve(__dirname, "..");
 const frontendDir = resolve(mobileDir, "..", "frontend");
 const wwwDir = resolve(mobileDir, "www");
 
+// App 端必须指向服务器的绝对地址: Capacitor WebView 的 origin 是 https://localhost,
+// 相对 /api 会解析到设备本地而非服务器, 导致 APK 无法取数据。构建时通过 VITE_API_BASE 注入。
 const apiBase = process.env.VITE_API_BASE || "";
-console.log(`[sync] VITE_API_BASE = "${apiBase || "(not set, using /api)"}"`);
+if (!apiBase) {
+  console.error("[sync] VITE_API_BASE 未设置, 中止构建。");
+  console.error("[sync] App 端需要后端绝对地址, 例如:");
+  console.error(`[sync]   $env:VITE_API_BASE="http://<服务器IP>/api"; npm run build:apk   (PowerShell)`);
+  console.error(`[sync]   VITE_API_BASE=http://<服务器IP>/api npm run build:apk            (bash)`);
+  console.error("[sync] 网页端不需要此变量 (走 nginx 同源 /api); 仅打包 APK 时需要。");
+  process.exit(1);
+}
+console.log(`[sync] VITE_API_BASE = "${apiBase}"`);
 
 // 1. Build the frontend
 console.log("[sync] Building frontend...");

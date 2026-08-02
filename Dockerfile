@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir \
     "fastapi>=0.115" "uvicorn[standard]>=0.32" "langchain>=0.3" \
     "langchain-openai>=0.3" "langchain-core>=0.3" "langgraph>=0.2" \
     "deepagents>=0.5" "pydantic>=2.9" "pydantic-settings>=2.5" \
-    "python-dotenv>=1.0"
+    "python-dotenv>=1.0" "psycopg[binary,pool]>=3.2"
 
 # Copy backend source
 COPY backend/ ./

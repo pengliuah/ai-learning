@@ -89,7 +89,7 @@ def create_plan(req: PlanCreateRequest):
 
     调用 DeepAgents Planner 子代理（``create_deep_agent`` +
     ``response_format=Plan``），根据主题或粘贴的学习资料生成结构化、
-    多模块的学习计划，并持久化到 ``backend/data/plans.json``。
+    多模块的学习计划，并持久化到 PostgreSQL 数据库。
     模块 id 会被规范化，状态初始化为 ``not_started``。
 
     请求体 ``PlanCreateRequest``:

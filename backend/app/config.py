@@ -15,6 +15,7 @@ DATA_DIR = BACKEND_DIR / "data"
 
 ARK_BASE_URL_DEFAULT = "https://ark.cn-beijing.volces.com/api/v3"
 ARK_MODEL_DEFAULT = "doubao-1.5-pro-32k"
+DATABASE_URL_DEFAULT = ""  # e.g. postgresql://user:pass@host:5432/zhixue
 
 # Unified log format, e.g.:
 #   2026-07-26 11:36:04 | 36.163.166.53:13700 | INFO     | app.main | <message>
@@ -44,6 +45,7 @@ class Settings(BaseSettings):
     ark_base_url: str = ARK_BASE_URL_DEFAULT
     ark_model: str = ARK_MODEL_DEFAULT
     log_level: str = "INFO"
+    database_url: str = DATABASE_URL_DEFAULT
 
 
 settings = Settings()

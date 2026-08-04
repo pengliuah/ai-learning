@@ -26,8 +26,11 @@ import re
 from typing import AsyncIterator
 
 from deepagents import create_deep_agent
+from deepagents.backends.filesystem import FilesystemBackend
+from deepagents.middleware.skills import SkillsMiddleware
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from .config import BACKEND_DIR
 from .llm import build_chat_model, build_streaming_model
 from .schemas import (
     Content,
@@ -128,7 +131,18 @@ class LearningCoach:
                 {"name": "quizzer", "description": QUIZ_DESC, "runnable": quizzer},
                 {"name": "grader", "description": GRADER_DESC, "runnable": grader},
             ]
-            supervisor = create_deep_agent(model=chat, subagents=subagents, system_prompt=COACH_SYSTEM)
+            # SkillsMiddleware: progressive disclosure of IMA note/KB skill.
+            # Shared FilesystemBackend so the agent's read_file can access
+            # skill files under backend/skills/.
+            fs_backend = FilesystemBackend(root_dir=str(BACKEND_DIR))
+            skills_mw = SkillsMiddleware(backend=fs_backend, sources=["/skills/"])
+            supervisor = create_deep_agent(
+                model=chat,
+                subagents=subagents,
+                system_prompt=COACH_SYSTEM,
+                middleware=[skills_mw],
+                backend=fs_backend,
+            )
             self._graphs = {
                 "planner": planner,
                 "content": content,

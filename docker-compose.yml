@@ -11,7 +11,7 @@ services:
       - ARK_MODEL=doubao-1.5-pro-32k
       - ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
       - LOG_LEVEL=INFO
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/zhixue
+      - DATABASE_URL=postgresql://postgres:123@postgres:5432/zhixue
     depends_on:
       postgres:
         condition: service_healthy
@@ -25,6 +25,7 @@ services:
       POSTGRES_PASSWORD: 123
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s

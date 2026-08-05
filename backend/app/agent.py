@@ -102,10 +102,11 @@ GRADER_SYSTEM = (
 )
 
 COACH_SYSTEM = (
-    "你是一名学习教练（supervisor）。你持有当前计划与源资料作为共享状态，"
-    "并通过 task 工具将任务委派给专门的子代理：planner（制定计划）、"
-    "content_author（撰写模块内容）、quizzer（设计测验）、grader（批改测验）。"
-    "根据用户目标决定委派哪个子代理，并把子代理返回的结果整合后回复用户。"
+    "你是一名学习教练（supervisor）。你持有当前计划与源资料作为共享状态。"
+    "制定学习计划时使用 create_plan 工具（会自动保存到数据库并返回计划 ID）；"
+    "撰写模块内容、设计测验、批改测验时通过 task 工具委派给对应子代理"
+    "（content_author / quizzer / grader）。"
+    "根据用户目标决定使用哪个工具，并把结果整合后回复用户。"
     "输出语言与用户输入语言保持一致。"
 )
 
@@ -129,7 +130,6 @@ class LearningCoach:
             quizzer = create_deep_agent(model=chat, tools=[], response_format=Quiz, system_prompt=QUIZ_SYSTEM)
             grader = create_deep_agent(model=chat, tools=[], response_format=GradingResult, system_prompt=GRADER_SYSTEM)
             subagents = [
-                {"name": "planner", "description": PLANNER_DESC, "runnable": planner},
                 {"name": "content_author", "description": CONTENT_DESC, "runnable": content},
                 {"name": "quizzer", "description": QUIZ_DESC, "runnable": quizzer},
                 {"name": "grader", "description": GRADER_DESC, "runnable": grader},

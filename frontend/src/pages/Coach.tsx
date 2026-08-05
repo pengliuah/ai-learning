@@ -41,19 +41,34 @@ const EXAMPLES = [
   "把刚才的学习笔记保存到 IMA 知识库",
 ];
 
+const STORAGE_KEY = "zhixue_coach_messages";
+
 function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
 export function Coach() {
   const navigate = useNavigate();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    } catch {}
   }, [messages]);
 
   const handleSend = async (text?: string) => {

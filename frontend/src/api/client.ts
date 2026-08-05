@@ -108,6 +108,7 @@ export const api = {
     goal: string,
     onDelta: (text: string) => void,
     onTool: (event: string, name: string) => void,
+    onPlanCreated?: (planId: string, title: string) => void,
   ): Promise<void> => {
     const res = await fetch(`${API_BASE}/coach/stream`, {
       method: "POST",
@@ -139,6 +140,7 @@ export const api = {
         const data = JSON.parse(dataStr);
         if (eventType === "delta") onDelta(data.text);
         else if (eventType === "tool") onTool(data.event, data.name);
+        else if (eventType === "plan_created" && onPlanCreated) onPlanCreated(data.plan_id, data.title);
         else if (eventType === "error") errMsg = data.detail;
       }
     }

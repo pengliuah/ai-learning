@@ -21,6 +21,7 @@ Architecture (design 5.2 hybrid):
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import AsyncIterator
@@ -29,7 +30,9 @@ from deepagents import create_deep_agent
 from deepagents.backends.filesystem import FilesystemBackend
 from deepagents.middleware.skills import SkillsMiddleware
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import tool
 
+from . import store
 from .config import BACKEND_DIR
 from .llm import build_chat_model, build_streaming_model
 from .schemas import (
@@ -131,6 +134,27 @@ class LearningCoach:
                 {"name": "quizzer", "description": QUIZ_DESC, "runnable": quizzer},
                 {"name": "grader", "description": GRADER_DESC, "runnable": grader},
             ]
+            # Custom tool: generate + persist a learning plan.
+            # Reuses self.make_plan (planner sub-agent) and store.create_document.
+            @tool
+            def create_plan(input: str, mode: str = "topic") -> str:
+                """生成学习计划并保存到数据库，返回计划 ID 和标题。
+                当用户想要制定学习计划、规划学习路径时使用此工具。
+
+                Args:
+                    input: 学习主题（如"Python 装饰器"）或粘贴的学习资料文本
+                    mode: "topic" 按主题规划，或 "materials" 基于资料规划
+
+                Returns:
+                    JSON: {"plan_id": "...", "title": "...", "modules": N}
+                """
+                plan = self.make_plan(PlanSource(input=input, mode=mode))
+                doc = store.create_document(PlanSource(input=input, mode=mode), plan)
+                return json.dumps(
+                    {"plan_id": doc.id, "title": plan.title, "modules": len(plan.modules)},
+                    ensure_ascii=False,
+                )
+
             # SkillsMiddleware: progressive disclosure of IMA note/KB skill.
             # Shared FilesystemBackend so the agent's read_file can access
             # skill files under backend/skills/.
@@ -140,6 +164,7 @@ class LearningCoach:
                 model=chat,
                 subagents=subagents,
                 system_prompt=COACH_SYSTEM,
+                tools=[create_plan],
                 middleware=[skills_mw],
                 backend=fs_backend,
             )
@@ -270,7 +295,16 @@ class LearningCoach:
                 if isinstance(text, str) and text:
                     yield ("delta", {"text": text})
             elif kind in ("on_tool_start", "on_tool_end"):
-                yield ("tool", {"event": kind, "name": event.get("name")})
+                name = event.get("name")
+                if kind == "on_tool_end" and name == "create_plan":
+                    output = event.get("data", {}).get("output")
+                    if isinstance(output, str):
+                        try:
+                            info = json.loads(output)
+                            yield ("plan_created", info)
+                        except (json.JSONDecodeError, KeyError):
+                            pass
+                yield ("tool", {"event": kind, "name": name})
 
 
 def _split_key_takeaways(text: str) -> tuple[str, list[str]]:

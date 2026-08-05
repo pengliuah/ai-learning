@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Send, Loader2, Wrench, CheckCircle2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Send, Loader2, CheckCircle2, AlertCircle, ArrowRight, ClipboardList } from "lucide-react";
 import { Markdown } from "../components/Markdown";
 import { api } from "../api/client";
 
@@ -32,6 +32,7 @@ interface Message {
   content: string;
   tools: ToolActivity[];
   error?: string;
+  planCreated?: { planId: string; title: string };
 }
 
 const EXAMPLES = [
@@ -91,6 +92,13 @@ export function Coach() {
               }
               return { ...m, tools };
             }),
+          );
+        },
+        (planId, title) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId ? { ...m, planCreated: { planId, title } } : m,
+            ),
           );
         },
       );
@@ -197,6 +205,18 @@ export function Coach() {
                       <AlertCircle className="h-4 w-4 shrink-0" />
                       {m.error}
                     </div>
+                  )}
+
+                  {/* Plan created - navigation button */}
+                  {m.planCreated && (
+                    <button
+                      onClick={() => navigate(`/plans/${m.planCreated!.planId}`)}
+                      className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50"
+                    >
+                      <ClipboardList className="h-4 w-4" />
+                      查看计划：{m.planCreated.title}
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </button>
                   )}
                 </>
               )}

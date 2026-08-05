@@ -101,4 +101,48 @@ export const api = {
     if (!doneDoc) throw new Error("stream ended without done event");
     return doneDoc;
   },
+
+  /** SSE stream for the agentic coach. Calls onDelta for text tokens,
+   *  onTool for tool/subagent events. Resolves on done, throws on error. */
+  streamCoach: async (
+    goal: string,
+    onDelta: (text: string) => void,
+    onTool: (event: string, name: string) => void,
+  ): Promise<void> => {
+    const res = await fetch(`${API_BASE}/coach/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ goal }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let errMsg: string | null = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() || "";
+
+      for (const frame of frames) {
+        let eventType = "";
+        let dataStr = "";
+        for (const line of frame.split("\n")) {
+          if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+          else if (line.startsWith("data: ")) dataStr += line.slice(6);
+        }
+        if (!dataStr) continue;
+        const data = JSON.parse(dataStr);
+        if (eventType === "delta") onDelta(data.text);
+        else if (eventType === "tool") onTool(data.event, data.name);
+        else if (eventType === "error") errMsg = data.detail;
+      }
+    }
+
+    if (errMsg) throw new Error(errMsg);
+  },
 };

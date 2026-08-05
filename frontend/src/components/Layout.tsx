@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { BookOpen, Sun, Moon } from "lucide-react";
+import { BookOpen, Sun, Moon, Bot } from "lucide-react";
 import { HealthBanner } from "./HealthBanner";
 import { useTheme } from "../hooks/useTheme";
 
@@ -13,6 +13,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <Link to="/" className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
             <BookOpen className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
             智学助手
+          </Link>
+          <Link
+            to="/coach"
+            className="ml-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400"
+          >
+            <Bot className="h-4 w-4" />
+            AI 教练
           </Link>
           <button
             onClick={toggleTheme}

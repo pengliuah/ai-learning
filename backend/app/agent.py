@@ -137,7 +137,7 @@ class LearningCoach:
             fs_backend = FilesystemBackend(root_dir=str(BACKEND_DIR))
             skills_mw = SkillsMiddleware(backend=fs_backend, sources=["/skills/"])
             supervisor = create_deep_agent(
-                model=chat,
+                model=build_streaming_model(),
                 subagents=subagents,
                 system_prompt=COACH_SYSTEM,
                 middleware=[skills_mw],

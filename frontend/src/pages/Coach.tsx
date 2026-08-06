@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Send, Loader2, CheckCircle2, AlertCircle, ArrowRight, ClipboardList } from "lucide-react";
+import { ArrowLeft, Send, Loader2, CheckCircle2, AlertCircle, ArrowRight, ClipboardList, Trash2 } from "lucide-react";
 import { Markdown } from "../components/Markdown";
 import { api } from "../api/client";
 
@@ -185,6 +185,16 @@ export function Coach() {
           返回
         </button>
         <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI 教练</h1>
+        <button
+          onClick={() => {
+            if (confirm("清除所有聊天历史？")) setMessages([]);
+          }}
+          disabled={streaming || messages.length === 0}
+          className="ml-auto inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+        >
+          <Trash2 className="h-4 w-4" />
+          清除历史
+        </button>
       </div>
 
       {/* Messages */}

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Send, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Send, Loader2, CheckCircle2, AlertCircle, ArrowRight, ClipboardList } from "lucide-react";
 import { Markdown } from "../components/Markdown";
 import { api } from "../api/client";
 
@@ -32,6 +32,7 @@ interface Message {
   content: string;
   tools: ToolActivity[];
   error?: string;
+  planIntent?: { topic: string };
 }
 
 const EXAMPLES = [
@@ -44,6 +45,57 @@ const STORAGE_KEY = "zhixue_coach_messages";
 
 function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+// 当用户消息明确表达「制定学习计划」意图时，提取学习主题；提取不到返回 null。
+function detectPlanIntent(text: string): { topic: string } | null {
+  const t = text.trim();
+  if (!t) return null;
+
+  const hasPlanWord = /(学习计划|学习路径|学习路线|学习方案|学习规划|计划|路径|路线|方案)/.test(t);
+  const hasVerb = /(制定|规划|设计|整理|列)/.test(t);
+  if (!hasPlanWord) return null;
+  if (!hasVerb && !/学习/.test(t)) return null;
+
+  const patterns = [
+    /制定\s*(.+?)\s*(?:的)?学习计划/,
+    /规划\s*(.+?)\s*(?:的)?(?:学习)?(?:路径|路线|规划)/,
+    /(?:设计|整理)\s*(.+?)\s*(?:的)?学习(?:计划|方案)/,
+    /(.+?)\s*(?:的)?学习计划/,
+    /(.+?)\s*(?:的)?学习路径/,
+    /(.+?)\s*(?:的)?学习路线/,
+    /(.+?)\s*(?:的)?学习方案/,
+    /学习\s*(.+?)\s*(?:的)?(?:计划|路径|路线|方案)/,
+    /制定\s*(.+?)\s*(?:的)?计划/,
+    /规划\s*(.+?)\s*(?:的)?(?:路径|路线)/,
+  ];
+  let topic = "";
+  for (const re of patterns) {
+    const m = t.match(re);
+    if (m && m[1] && m[1].trim()) {
+      topic = m[1].trim();
+      break;
+    }
+  }
+  if (!topic) return null;
+
+  const lead = /^(帮我|请|我想|想要|麻烦|能不能|可以|一下|一个|一份|来|出|制定|规划|设计|整理|列个|列出)/;
+  for (let i = 0; i < 3 && lead.test(topic); i++) topic = topic.replace(lead, "").trim();
+  topic = topic
+    .replace(/^个(?![人别位体例案性数])/, "")
+    .replace(/^份(?![额量内])/, "")
+    .replace(/^项(?!目)/, "")
+    .replace(/^本(?![身质地能文])/, "")
+    .replace(/^篇(?![章幅])/, "")
+    .replace(/^道(?![路理德具])/, "")
+    .replace(/^条(?![件理约])/, "")
+    .replace(/^门(?![类户面槛派])/, "")
+    .replace(/(一下|一个|一份|些|点|的|了|啊|吧|呢|[，。、！？!?,.\s])+$/, "")
+    .replace(/^[，。、！？!?,.\s]+/, "")
+    .trim();
+  if (/^(个|份|项|道|篇|本|条|门|些|点)$/.test(topic)) return null;
+
+  return topic ? { topic } : null;
 }
 
 export function Coach() {
@@ -75,11 +127,12 @@ export function Coach() {
     if (!goal || streaming) return;
 
     const assistantId = uid();
+    const intent = detectPlanIntent(goal);
     setInput("");
     setStreaming(true);
     setMessages((prev) => [
       ...prev,
-      { id: uid(), role: "user", content: goal, tools: [] },
+      { id: uid(), role: "user", content: goal, tools: [], ...(intent ? { planIntent: intent } : {}) },
       { id: assistantId, role: "assistant", content: "", tools: [] },
     ]);
 
@@ -157,17 +210,27 @@ export function Coach() {
 
         {messages.map((m) => (
           <div key={m.id} className={m.role === "user" ? "flex justify-end" : ""}>
-            <div
-              className={
-                m.role === "user"
-                  ? "max-w-[80%] rounded-lg bg-indigo-600 px-4 py-2.5 text-sm text-white"
-                  : "w-full"
-              }
-            >
               {m.role === "user" ? (
-                <p className="whitespace-pre-wrap">{m.content}</p>
+                <div className="flex max-w-[80%] flex-col items-end gap-2">
+                  <div className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm text-white">
+                    <p className="whitespace-pre-wrap">{m.content}</p>
+                  </div>
+                  {m.planIntent && (
+                    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 dark:border-indigo-800 dark:bg-indigo-900/30">
+                      <ClipboardList className="h-4 w-4 shrink-0 text-indigo-500 dark:text-indigo-400" />
+                      <span className="text-sm text-indigo-700 dark:text-indigo-300">想要制定「{m.planIntent.topic}」的学习计划？</span>
+                      <button
+                        onClick={() => navigate(`/plans/new?topic=${encodeURIComponent(m.planIntent!.topic)}`)}
+                        className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600"
+                      >
+                        制定计划
+                        <ArrowRight className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               ) : (
-                <>
+                <div className="w-full">
                   {/* Tool badges */}
                   {m.tools.length > 0 && (
                     <div className="mb-2 flex flex-wrap gap-1.5">
@@ -213,9 +276,8 @@ export function Coach() {
                       {m.error}
                     </div>
                   )}
-                </>
+                </div>
               )}
-            </div>
           </div>
         ))}
       </div>

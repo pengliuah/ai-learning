@@ -72,3 +72,17 @@ def test_persistence_round_trip(tmp_store):
     docs = store.list_documents()
     assert len(docs) == 1
     assert docs[0].id == doc.id
+
+def test_list_items_filter_by_title(tmp_store):
+    store.create_document(PlanSource(input="x", mode="topic"), make_plan(title="Python 装饰器基础"))
+    store.create_document(PlanSource(input="x", mode="topic"), make_plan(title="机器学习入门"))
+    store.create_document(PlanSource(input="x", mode="topic"), make_plan(title="React 开发"))
+
+    assert [i.title for i in store.list_items("Python")] == ["Python 装饰器基础"]
+    assert [i.title for i in store.list_items("python")] == ["Python 装饰器基础"]  # case-insensitive
+    assert [i.title for i in store.list_items("机器学习")] == ["机器学习入门"]
+    assert store.list_items("不存在的主题") == []
+    # empty / None / whitespace -> all
+    assert len(store.list_items()) == 3
+    assert len(store.list_items("")) == 3
+    assert len(store.list_items("  ")) == 3

@@ -268,17 +268,22 @@ def list_documents() -> list[Document]:
     return docs
 
 
-def list_items() -> list[PlanListItem]:
+def list_items(q: str | None = None) -> list[PlanListItem]:
+    """List plan summaries, optionally filtered by a case-insensitive title
+    substring. An empty/whitespace ``q`` (or None) returns all plans."""
+    q = (q or "").strip()
+    where = "WHERE p.title ILIKE %s" if q else ""
+    params: tuple = (f"%{q}%",) if q else ()
+    sql = f"""SELECT p.id, p.title, p.created_at,
+                     COUNT(m.id) AS total,
+                     COUNT(m.id) FILTER (WHERE m.status = 'completed') AS done
+              FROM plans p
+              LEFT JOIN modules m ON m.plan_id = p.id
+              {where}
+              GROUP BY p.id, p.title, p.created_at
+              ORDER BY p.created_at"""
     with db_conn() as conn:
-        rows = conn.execute(
-            """SELECT p.id, p.title, p.created_at,
-                      COUNT(m.id) AS total,
-                      COUNT(m.id) FILTER (WHERE m.status = 'completed') AS done
-               FROM plans p
-               LEFT JOIN modules m ON m.plan_id = p.id
-               GROUP BY p.id, p.title, p.created_at
-               ORDER BY p.created_at"""
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     items = [
         PlanListItem(
             id=str(r["id"]),
@@ -288,7 +293,7 @@ def list_items() -> list[PlanListItem]:
         )
         for r in rows
     ]
-    logger.debug("list_items: count=%d", len(items))
+    logger.debug("list_items: q=%s count=%d", q or "-", len(items))
     return items
 
 

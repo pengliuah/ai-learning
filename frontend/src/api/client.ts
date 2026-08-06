@@ -15,7 +15,8 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => json<{ configured: boolean; model: string }>("/health"),
 
-  listPlans: () => json<PlanListItem[]>("/plans"),
+  listPlans: (q?: string) =>
+    json<PlanListItem[]>(`/plans${q ? `?q=${encodeURIComponent(q)}` : ""}`),
 
   getPlan: (id: string) => json<Document>(`/plans/${id}`),
 

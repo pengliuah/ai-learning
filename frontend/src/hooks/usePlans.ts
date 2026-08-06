@@ -9,7 +9,7 @@ export const PLAN_KEYS = {
 export function usePlans() {
   return useQuery({
     queryKey: PLAN_KEYS.list,
-    queryFn: api.listPlans,
+    queryFn: () => api.listPlans(),
   });
 }
 

@@ -118,9 +118,10 @@ def create_plan(req: PlanCreateRequest):
 
 
 @app.get("/api/plans")
-def list_plans():
-    """列出所有计划（概要视图）。
+def list_plans(q: str | None = None):
+    """列出计划（概要视图），可按标题关键词过滤。
 
+    查询参数 ``q`` (str, 可选) 按计划标题做大小写不敏感子串过滤；为空返回全部。
     返回轻量列表，用于首页计划列表展示。进度按「已完成模块数 / 模块总数」计算。
 
     返回:
@@ -130,8 +131,8 @@ def list_plans():
         - ``createdAt`` (datetime)
         - ``progress`` (float, 0.0~1.0)
     """
-    items = store.list_items()
-    logger.info("list_plans: count=%d", len(items))
+    items = store.list_items(q)
+    logger.info("list_plans: q=%s count=%d", (q or "-")[:50], len(items))
     return items
 
 

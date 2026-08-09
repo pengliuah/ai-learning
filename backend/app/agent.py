@@ -12,24 +12,25 @@ Architecture (design 5.2 hybrid):
   structured_response ("endpoints call the relevant sub-agent"). DeepAgents +
   LangGraph, for real.
 - ContentAuthor streams markdown directly from a streaming ChatOpenAI for
-  reliable token-by-token UX; a DeepAgents content graph is also wired as a
-  supervisor subagent for the agentic coach path.
-- A supervisor create_deep_agent(subagents=[...]) holds shared state and
-  delegates via the built-in ``task`` tool (the 学习教练), exposed via
-  /api/coach/stream using LangGraph astream_events.
+  reliable token-by-token UX.
+- The coach chat (/api/coach/stream) is a plain streaming ChatOpenAI
+  conversation (no tools / no agent): the frontend detects plan-creation or
+  search intent and routes to the structured plan flow.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import AsyncIterator
 
 from deepagents import create_deep_agent
-from deepagents.backends.filesystem import FilesystemBackend
-from deepagents.middleware.skills import SkillsMiddleware
+from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import tool
 
+from . import store
 from .config import BACKEND_DIR
 from .llm import build_chat_model, build_streaming_model
 from .schemas import (
@@ -99,56 +100,42 @@ GRADER_SYSTEM = (
 )
 
 COACH_SYSTEM = (
-    "你是一名学习教练（supervisor）。你持有当前计划与源资料作为共享状态，"
-    "并通过 task 工具将任务委派给专门的子代理：planner（制定计划）、"
-    "content_author（撰写模块内容）、quizzer（设计测验）、grader（批改测验）。"
-    "根据用户目标决定委派哪个子代理，并把子代理返回的结果整合后回复用户。"
+    "你是一名学习教练助手，与用户进行自然的学习对话：解答概念、提供学习建议、鼓励和引导用户。\n"
+    "你有两个工具，只在用户明确表达对应意图时才调用，日常闲聊与知识问答不要调用工具：\n"
+    "- create_plan：用户明确想要制定/生成一份学习计划时调用，传入学习主题；调用后前端会跳转到新建计划页面并预填主题，你无需自行生成计划内容。\n"
+    "- search_plans：用户想要查找/看看已有的学习计划时调用，传入搜索关键词（可为空表示全部）。\n"
+    "调用工具后，根据返回结果用自然语言向用户说明。"
     "输出语言与用户输入语言保持一致。"
 )
-
-PLANNER_DESC = "根据主题或学习资料生成结构化学习计划（多模块）。当用户需要制定学习计划时使用。"
-CONTENT_DESC = "为指定学习模块撰写 Markdown 学习内容。当需要生成模块学习内容时使用。"
-QUIZ_DESC = "为指定模块与内容设计测验（单选+简答）。当需要生成测验时使用。"
-GRADER_DESC = "根据测验题目与参考答案对学生作答评分。当需要批改测验时使用。"
-
 
 class LearningCoach:
     """Supervisor + four structured-output sub-agents over Volcengine Ark."""
 
     def __init__(self) -> None:
         self._graphs: dict | None = None
+        self._chat_agent = None
+
+    @staticmethod
+    def _make_subagent(response_format, system_prompt):
+        return create_deep_agent(
+            model=build_chat_model(),
+            tools=[],
+            response_format=response_format,
+            system_prompt=system_prompt,
+        )
 
     def _build(self) -> dict:
+        # Cache only the stateless sub-agents (StateBackend, no checkpointer ->
+        # fresh state every invoke, no cross-invocation leakage). The supervisor
+        # is built fresh per chat turn by _build_supervisor() so its
+        # FilesystemBackend / middleware state never leaks between turns or into
+        # plan-creation.
         if self._graphs is None:
-            chat = build_chat_model()
-            planner = create_deep_agent(model=chat, tools=[], response_format=Plan, system_prompt=PLANNER_SYSTEM)
-            content = create_deep_agent(model=chat, tools=[], system_prompt=CONTENT_SYSTEM)
-            quizzer = create_deep_agent(model=chat, tools=[], response_format=Quiz, system_prompt=QUIZ_SYSTEM)
-            grader = create_deep_agent(model=chat, tools=[], response_format=GradingResult, system_prompt=GRADER_SYSTEM)
-            subagents = [
-                {"name": "planner", "description": PLANNER_DESC, "runnable": planner},
-                {"name": "content_author", "description": CONTENT_DESC, "runnable": content},
-                {"name": "quizzer", "description": QUIZ_DESC, "runnable": quizzer},
-                {"name": "grader", "description": GRADER_DESC, "runnable": grader},
-            ]
-            # SkillsMiddleware: progressive disclosure of IMA note/KB skill.
-            # Shared FilesystemBackend so the agent's read_file can access
-            # skill files under backend/skills/.
-            fs_backend = FilesystemBackend(root_dir=str(BACKEND_DIR))
-            skills_mw = SkillsMiddleware(backend=fs_backend, sources=["/skills/"])
-            supervisor = create_deep_agent(
-                model=build_streaming_model(),
-                subagents=subagents,
-                system_prompt=COACH_SYSTEM,
-                middleware=[skills_mw],
-                backend=fs_backend,
-            )
             self._graphs = {
-                "planner": planner,
-                "content": content,
-                "quizzer": quizzer,
-                "grader": grader,
-                "supervisor": supervisor,
+                "planner": self._make_subagent(Plan, PLANNER_SYSTEM),
+                "content": self._make_subagent(None, CONTENT_SYSTEM),
+                "quizzer": self._make_subagent(Quiz, QUIZ_SYSTEM),
+                "grader": self._make_subagent(GradingResult, GRADER_SYSTEM),
             }
         return self._graphs
 
@@ -256,11 +243,47 @@ class LearningCoach:
         logger.info("grade_quiz: module=%s score=%.1f/%.1f", module.id, result.totalScore, result.maxScore)
         return result
 
+    def _build_chat_agent(self):
+        # Lean tool-calling agent for the chat: only create_plan / search_plans,
+        # no filesystem / todos / subagents. The LLM detects intent via function
+        # calling and invokes the matching tool. Cached (no checkpointer ->
+        # fresh state every invoke, no cross-invocation leakage).
+        if self._chat_agent is None:
+            @tool
+            def create_plan(topic: str) -> str:
+                """当用户明确想要制定/生成一份学习计划时调用，传入学习主题。调用后前端会跳转到新建计划页面并预填该主题，你无需自行生成计划内容。
+
+                Args:
+                    topic: 学习主题，例如 "Python 装饰器" 或 "机器学习基础"。
+                """
+                return json.dumps({"topic": topic}, ensure_ascii=False)
+
+            @tool
+            def search_plans(query: str) -> str:
+                """搜索已有的学习计划。当用户想要查找/看看已有计划时调用。
+
+                Args:
+                    query: 搜索关键词（学习主题）；为空字符串时列出全部已有计划。
+                """
+                items = store.list_items(query.strip() or None)
+                return json.dumps(
+                    [{"id": i.id, "title": i.title, "progress": i.progress} for i in items],
+                    ensure_ascii=False,
+                )
+
+            self._chat_agent = create_agent(
+                model=build_streaming_model(),
+                tools=[create_plan, search_plans],
+                system_prompt=COACH_SYSTEM,
+            )
+        return self._chat_agent
+
     async def coach_stream(self, goal: str) -> AsyncIterator[tuple[str, object]]:
-        """Run the DeepAgents supervisor and stream model/tool events."""
-        supervisor = self._build()["supervisor"]
+        """Run the chat agent: a normal conversation that calls create_plan /
+        search_plans only when the LLM detects a clear intent."""
+        agent = self._build_chat_agent()
         logger.info("coach_stream: goal=%s", goal[:100])
-        async for event in supervisor.astream_events(
+        async for event in agent.astream_events(
             {"messages": [HumanMessage(content=goal)]}, version="v2"
         ):
             kind = event.get("event")
@@ -269,8 +292,13 @@ class LearningCoach:
                 text = getattr(chunk, "content", "") if chunk else ""
                 if isinstance(text, str) and text:
                     yield ("delta", {"text": text})
-            elif kind in ("on_tool_start", "on_tool_end"):
-                yield ("tool", {"event": kind, "name": event.get("name")})
+            elif kind == "on_tool_start":
+                yield ("tool", {"phase": "start", "name": event.get("name")})
+            elif kind == "on_tool_end":
+                output = event.get("data", {}).get("output", "")
+                if hasattr(output, "content"):
+                    output = output.content
+                yield ("tool", {"phase": "end", "name": event.get("name"), "output": str(output)})
 
 
 def _split_key_takeaways(text: str) -> tuple[str, list[str]]:

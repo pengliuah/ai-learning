@@ -103,12 +103,12 @@ export const api = {
     return doneDoc;
   },
 
-  /** SSE stream for the agentic coach. Calls onDelta for text tokens,
-   *  onTool for tool/subagent events. Resolves on done, throws on error. */
+  /** SSE stream for the coach chat. onDelta for text tokens, onTool for
+   *  create_plan / search_plans tool events. Resolves on done, throws on error. */
   streamCoach: async (
     goal: string,
     onDelta: (text: string) => void,
-    onTool: (event: string, name: string) => void,
+    onTool: (data: { phase: string; name: string; output?: string }) => void,
   ): Promise<void> => {
     const res = await fetch(`${API_BASE}/coach/stream`, {
       method: "POST",
@@ -139,7 +139,7 @@ export const api = {
         if (!dataStr) continue;
         const data = JSON.parse(dataStr);
         if (eventType === "delta") onDelta(data.text);
-        else if (eventType === "tool") onTool(data.event, data.name);
+        else if (eventType === "tool") onTool(data);
         else if (eventType === "error") errMsg = data.detail;
       }
     }

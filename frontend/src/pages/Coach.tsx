@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Send, Loader2, AlertCircle, ArrowRight, ClipboardList, Search, Trash2 } from "lucide-react";
 import { Markdown } from "../components/Markdown";
 import { api } from "../api/client";
@@ -124,6 +124,18 @@ export function Coach() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
     } catch {}
   }, [messages]);
+
+  // Auto-send a prefilled goal from ?goal= query param (e.g. save-to-IMA).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const autoSent = useRef(false);
+  useEffect(() => {
+    const goal = searchParams.get("goal");
+    if (goal && !autoSent.current) {
+      autoSent.current = true;
+      setSearchParams({}, { replace: true });
+      handleSend(goal);
+    }
+  }, [searchParams]);
 
   const handleSend = async (text?: string) => {
     const goal = (text ?? input).trim();

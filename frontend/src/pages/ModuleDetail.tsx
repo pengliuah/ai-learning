@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Loader2, FileText, ListChecks, Sparkles,
-  CheckCircle2, XCircle, ArrowRight, RotateCcw, BookOpen, RefreshCw,
+  CheckCircle2, XCircle, ArrowRight, RotateCcw, BookOpen, RefreshCw, Bookmark,
 } from "lucide-react";
 import { Markdown } from "../components/Markdown";
 import { usePlan, useGenerateQuiz, useGradeQuiz, useSaveAnswers, PLAN_KEYS } from "../hooks/usePlans";
@@ -185,7 +185,14 @@ export function ModuleDetail() {
 
               {hasContent && !streaming && (
                 <div>
-                  <div className="mb-3 flex justify-end">
+                  <div className="mb-3 flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => navigate(`/coach?goal=${encodeURIComponent(`请把以下学习内容保存到 IMA 笔记，标题为「${doc.plan.title} - ${module.title}」：\n\n${module.content!.markdown}`)}`)}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                    >
+                      <Bookmark className="h-4 w-4" />
+                      保存到 IMA
+                    </button>
                     <button
                       onClick={handleGenerateContent}
                       className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"

@@ -126,10 +126,7 @@ class LearningCoach:
 
     def _build(self) -> dict:
         # Cache only the stateless sub-agents (StateBackend, no checkpointer ->
-        # fresh state every invoke, no cross-invocation leakage). The supervisor
-        # is built fresh per chat turn by _build_supervisor() so its
-        # FilesystemBackend / middleware state never leaks between turns or into
-        # plan-creation.
+        # fresh state every invoke, no cross-invocation leakage).
         if self._graphs is None:
             self._graphs = {
                 "planner": self._make_subagent(Plan, PLANNER_SYSTEM),
@@ -244,10 +241,11 @@ class LearningCoach:
         return result
 
     def _build_chat_agent(self):
-        # Lean tool-calling agent for the chat: only create_plan / search_plans,
-        # no filesystem / todos / subagents. The LLM detects intent via function
-        # calling and invokes the matching tool. Cached (no checkpointer ->
-        # fresh state every invoke, no cross-invocation leakage).
+        # Lean LangChain agent: only create_plan / search_plans.
+        # No filesystem / todos / execute / task tools (unlike create_deep_agent),
+        # so normal chat won't trigger tool calls. The LLM calls a tool only when
+        # it detects a clear intent. Cached (no checkpointer -> fresh state every
+        # invoke).
         if self._chat_agent is None:
             @tool
             def create_plan(topic: str) -> str:

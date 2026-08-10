@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, ChevronRight, Trash2, Clock } from "lucide-react";
+import { ArrowLeft, ChevronRight, Trash2, Clock, Bookmark } from "lucide-react";
 import { usePlan, useDeletePlan, PLAN_KEYS } from "../hooks/usePlans";
 import { ProgressBar } from "../components/ProgressBar";
 import { StatusBadge, DifficultyBadge } from "../components/StatusBadge";
@@ -33,16 +33,29 @@ export function PlanDetail() {
           <ArrowLeft className="h-4 w-4" />
           返回
         </button>
-        <button
-          onClick={() => {
-            if (confirm(`删除「${plan.title}」？`)) {
-              deletePlan.mutate(planId!, { onSuccess: () => navigate("/") });
-            }
-          }}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/40 dark:hover:text-red-400"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              const lines = plan.modules.map((m, i) => `${i + 1}. ${m.title}（${m.minutes}分钟，${m.difficulty}）\n   ${m.summary}`);
+              const content = `## 学习目标\n${plan.goal}\n\n## 概要\n${plan.summary}\n\n## 模块\n${lines.join("\n\n")}`;
+              navigate(`/coach?goal=${encodeURIComponent(`请把以下学习计划保存到 IMA 笔记，标题为「${plan.title}」：\n\n${content}`)}`);
+            }}
+            className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+          >
+            <Bookmark className="h-4 w-4" />
+            保存到 IMA
+          </button>
+          <button
+            onClick={() => {
+              if (confirm(`删除「${plan.title}」？`)) {
+                deletePlan.mutate(planId!, { onSuccess: () => navigate("/") });
+              }
+            }}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/40 dark:hover:text-red-400"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">

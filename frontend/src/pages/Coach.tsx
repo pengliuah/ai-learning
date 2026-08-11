@@ -125,7 +125,7 @@ export function Coach() {
     } catch {}
   }, [messages]);
 
-  // Auto-send a prefilled goal from ?goal= query param (e.g. save-to-IMA).
+  // Auto-send a prefilled goal from ?goal= query param.
   const [searchParams, setSearchParams] = useSearchParams();
   const autoSent = useRef(false);
   useEffect(() => {

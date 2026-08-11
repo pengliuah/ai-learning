@@ -156,3 +156,36 @@ CREATE TABLE question_results (
     sort_order        INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_qresults_grading ON question_results (grading_module_id);
+
+-- ---------------------------------------------------------------------------
+-- ima_settings  -  single-row table for IMA OpenAPI configuration
+--
+-- Stores IMA credentials + the skill prompt that controls how content is
+-- formatted before saving to IMA.  One row (id=1) per deployment.
+-- ---------------------------------------------------------------------------
+CREATE TABLE ima_settings (
+    id                INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    ima_client_id     TEXT NOT NULL DEFAULT '',
+    ima_api_key       TEXT NOT NULL DEFAULT '',
+    ima_skill_prompt  TEXT NOT NULL DEFAULT '',
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TRIGGER ima_settings_set_updated_at
+    BEFORE UPDATE ON ima_settings
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- gen_settings  -  per-type generation strategy prompts
+--
+-- One row per generation type (plan / content / quiz).  Each row's
+-- ``strategy`` text is appended to the LLM prompt when generating that
+-- type of content, letting users steer generation without code changes.
+-- ---------------------------------------------------------------------------
+CREATE TABLE gen_settings (
+    gen_type          TEXT PRIMARY KEY CHECK (gen_type IN ('plan', 'content', 'quiz')),
+    strategy          TEXT NOT NULL DEFAULT '',
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TRIGGER gen_settings_set_updated_at
+    BEFORE UPDATE ON gen_settings
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();

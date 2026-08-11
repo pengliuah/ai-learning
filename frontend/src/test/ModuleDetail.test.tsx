@@ -10,6 +10,7 @@ vi.mock('../api/client', () => ({
     gradeQuiz: vi.fn(),
     generateQuiz: vi.fn(),
     streamContent: vi.fn(),
+    saveToIma: vi.fn(),
   } as unknown as typeof import('../api/client')['api'],
 }))
 
@@ -272,12 +273,12 @@ describe('ModuleDetail', () => {
       }),
     ])
     vi.mocked(api.getPlan).mockResolvedValue(doc)
-    const { findByText } = renderAtRoute(
+    const { findAllByText } = renderAtRoute(
       <ModuleDetail />,
       "/plans/:planId/modules/:moduleId",
       "/plans/plan-1/modules/m1",
     )
-    await findByText("重新生成")
+    await findAllByText("重新生成")
   })
 
   it("shows a regenerate button when quiz already exists", async () => {
@@ -289,7 +290,7 @@ describe('ModuleDetail', () => {
       "/plans/plan-1/modules/m1",
     )
     fireEvent.click(await findByText("测验"))
-    await findByText("重新生成测验")
+    await findByText("重新生成")
   })
 
   it("regenerating quiz calls the API and shows new questions", async () => {
@@ -312,7 +313,7 @@ describe('ModuleDetail', () => {
       "/plans/plan-1/modules/m1",
     )
     fireEvent.click(await findByText("测验"))
-    fireEvent.click(await findByText("重新生成测验"))
+    fireEvent.click(await findByText("重新生成"))
     await waitFor(() => expect(vi.mocked(api.generateQuiz)).toHaveBeenCalledWith("plan-1", "m1"))
     await findByText("new question")
   })

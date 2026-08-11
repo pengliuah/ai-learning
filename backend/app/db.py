@@ -127,6 +127,78 @@ def init_schema() -> None:
                 logger.info("init_schema: schema applied from %s", SCHEMA_PATH.name)
             else:
                 logger.debug("init_schema: plans table exists, skipping")
+
+                # 1. Create ima_settings if missing.
+                if not conn.execute(
+                    "SELECT to_regclass('public.ima_settings')"
+                ).fetchone()[0]:
+                    conn.execute(
+                        """CREATE TABLE ima_settings (
+                               id                INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+                               ima_client_id     TEXT NOT NULL DEFAULT '',
+                               ima_api_key       TEXT NOT NULL DEFAULT '',
+                               ima_skill_prompt  TEXT NOT NULL DEFAULT '',
+                               updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+                           )"""
+                    )
+                    conn.execute(
+                        """CREATE TRIGGER ima_settings_set_updated_at
+                           BEFORE UPDATE ON ima_settings
+                           FOR EACH ROW EXECUTE FUNCTION set_updated_at()"""
+                    )
+                    logger.info("init_schema: ima_settings table added")
+
+                # 2. Create gen_settings if missing (with 3 default rows).
+                if not conn.execute(
+                    "SELECT to_regclass('public.gen_settings')"
+                ).fetchone()[0]:
+                    conn.execute(
+                        """CREATE TABLE gen_settings (
+                               gen_type          TEXT PRIMARY KEY CHECK (gen_type IN ('plan', 'content', 'quiz')),
+                               strategy          TEXT NOT NULL DEFAULT '',
+                               updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+                           )"""
+                    )
+                    conn.execute(
+                        """CREATE TRIGGER gen_settings_set_updated_at
+                           BEFORE UPDATE ON gen_settings
+                           FOR EACH ROW EXECUTE FUNCTION set_updated_at()"""
+                    )
+                    conn.execute(
+                        """INSERT INTO gen_settings (gen_type) VALUES
+                           ('plan'), ('content'), ('quiz')
+                           ON CONFLICT DO NOTHING"""
+                    )
+                    logger.info("init_schema: gen_settings table added")
+
+                # 3. Migrate data from old app_settings table if it exists,
+                #    then drop it. (Tables must already exist -- step 1+2.)
+                if conn.execute(
+                    "SELECT to_regclass('public.app_settings')"
+                ).fetchone()[0]:
+                    cur = conn.cursor(row_factory=dict_row)
+                    old_row = cur.execute(
+                        "SELECT * FROM app_settings WHERE id = 1"
+                    ).fetchone()
+                    if old_row:
+                        conn.execute(
+                            """INSERT INTO ima_settings (id, ima_client_id, ima_api_key, ima_skill_prompt)
+                               VALUES (1, %s, %s, %s)
+                               ON CONFLICT (id) DO UPDATE SET
+                                   ima_client_id = EXCLUDED.ima_client_id,
+                                   ima_api_key = EXCLUDED.ima_api_key,
+                                   ima_skill_prompt = EXCLUDED.ima_skill_prompt""",
+                            (old_row["ima_client_id"], old_row["ima_api_key"],
+                             old_row["ima_skill_prompt"]),
+                        )
+                        conn.execute(
+                            """INSERT INTO gen_settings (gen_type, strategy)
+                               VALUES ('plan', %s)
+                               ON CONFLICT (gen_type) DO UPDATE SET strategy = EXCLUDED.strategy""",
+                            (old_row["regen_strategy"],),
+                        )
+                    conn.execute("DROP TABLE app_settings")
+                    logger.info("init_schema: migrated app_settings -> ima_settings + gen_settings")
         _schema_ok = True
     except Exception:
         _schema_ok = False

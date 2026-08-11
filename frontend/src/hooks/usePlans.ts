@@ -101,6 +101,21 @@ export function usePatchModule() {
 }
 
 
+export function useSaveToIma() {
+  return useMutation({
+    mutationFn: ({
+      planId,
+      moduleId,
+      contentType,
+    }: {
+      planId: string;
+      moduleId?: string;
+      contentType?: "plan" | "content" | "quiz" | "result";
+    }) =>
+      api.saveToIma(planId, { moduleId, contentType }),
+  });
+}
+
 export function useHealth() {
   return useQuery({
     queryKey: ["health"] as const,

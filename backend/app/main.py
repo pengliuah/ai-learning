@@ -21,11 +21,17 @@ from .middleware import AccessLogMiddleware
 from .schemas import (
     AnswersState,
     CoachRequest,
+    GenSettings,
+    GenSettingsUpdate,
+    ImaSettings,
+    ImaSettingsUpdate,
     ModuleStatus,
     ModuleStatusPatch,
     PlanCreateRequest,
     PlanSource,
     SaveAnswersRequest,
+    SaveToImaRequest,
+    SaveToImaResponse,
 )
 
 app = FastAPI(title="zhixue-backend", version="0.1.0")
@@ -484,6 +490,75 @@ async def coach_stream(req: CoachRequest):
             yield _sse("error", {"detail": str(exc)})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/api/settings/ima")
+def get_ima_settings():
+    """读取 IMA 设置（凭证 + skill prompt）。"""
+    row = store.get_ima_settings_row()
+    return ImaSettings(
+        imaClientId=row["ima_client_id"],
+        imaApiKey=row["ima_api_key"],
+        imaSkillPrompt=row["ima_skill_prompt"],
+    )
+
+
+@app.put("/api/settings/ima")
+def put_ima_settings(req: ImaSettingsUpdate):
+    """更新 IMA 设置（仅更新提供的字段）。"""
+    row = store.update_ima_settings(
+        client_id=req.imaClientId,
+        api_key=req.imaApiKey,
+        skill_prompt=req.imaSkillPrompt,
+    )
+    logger.info("put_ima_settings: updated (client_id set=%s, prompt set=%s)",
+                bool(row["ima_client_id"]), bool(row["ima_skill_prompt"]))
+    return ImaSettings(
+        imaClientId=row["ima_client_id"],
+        imaApiKey=row["ima_api_key"],
+        imaSkillPrompt=row["ima_skill_prompt"],
+    )
+
+
+@app.get("/api/settings/regenerate")
+def get_regen_settings():
+    """读取生成策略设置（按类型：plan/content/quiz）。"""
+    row = store.get_gen_settings_row()
+    return GenSettings(plan=row["plan"], content=row["content"], quiz=row["quiz"])
+
+
+@app.put("/api/settings/regenerate")
+def put_regen_settings(req: GenSettingsUpdate):
+    """更新生成策略设置（仅更新提供的字段）。"""
+    row = store.update_gen_settings(
+        plan=req.plan, content=req.content, quiz=req.quiz
+    )
+    logger.info("put_regen_settings: plan=%s content=%s quiz=%s",
+                bool(row["plan"]), bool(row["content"]), bool(row["quiz"]))
+    return GenSettings(plan=row["plan"], content=row["content"], quiz=row["quiz"])
+
+
+@app.post("/api/plans/{plan_id}/save-to-ima")
+def save_to_ima(plan_id: str, req: SaveToImaRequest):
+    """将计划或模块内容保存到 IMA 笔记。
+
+    读取已存储的 IMA 凭证与 skill prompt，按需用 LLM 格式化后
+    调用 IMA import_doc API 创建笔记。若 ``moduleId`` 为空则保存整个计划概览。
+
+    请求体 ``SaveToImaRequest``:
+        - ``moduleId`` (str, 可选): 指定模块则保存该模块内容，为空保存整个计划。
+        - ``skillPromptOverride`` (str, 可选): 覆盖存储的 IMA skill prompt。
+
+    返回 ``SaveToImaResponse``: ``{ok, noteId, title, detail}``。
+    """
+    doc = _get_doc(plan_id)
+    module = None
+    if req.moduleId:
+        module = _get_module(doc, req.moduleId)
+    return coach.save_to_ima(
+        doc.plan, module=module, content_type=req.contentType,
+        skill_prompt_override=req.skillPromptOverride,
+    )
 
 
 def _sse(event: str, data) -> str:

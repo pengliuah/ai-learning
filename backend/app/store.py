@@ -390,6 +390,96 @@ def update_module(
     return doc
 
 
+# ---------------------------------------------------------------------------
+# IMA settings (single-row table: credentials + skill prompt)
+# ---------------------------------------------------------------------------
+
+def get_ima_settings_row() -> dict:
+    """Return the ima_settings row as a dict, creating defaults if missing."""
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM ima_settings WHERE id = 1").fetchone()
+        if row is None:
+            conn.execute("INSERT INTO ima_settings (id) VALUES (1)")
+            row = conn.execute("SELECT * FROM ima_settings WHERE id = 1").fetchone()
+    return dict(row)
+
+
+def update_ima_settings(
+    client_id: str | None = None,
+    api_key: str | None = None,
+    skill_prompt: str | None = None,
+) -> dict:
+    """Update IMA credential / skill-prompt fields (only non-None are set)."""
+    sets: list[str] = []
+    params: list = []
+    if client_id is not None:
+        sets.append("ima_client_id = %s")
+        params.append(client_id)
+    if api_key is not None:
+        sets.append("ima_api_key = %s")
+        params.append(api_key)
+    if skill_prompt is not None:
+        sets.append("ima_skill_prompt = %s")
+        params.append(skill_prompt)
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT INTO ima_settings (id) VALUES (1) ON CONFLICT DO NOTHING"
+        )
+        if sets:
+            params.append(1)
+            conn.execute(
+                f"UPDATE ima_settings SET {', '.join(sets)} WHERE id = %s",
+                params,
+            )
+        row = conn.execute("SELECT * FROM ima_settings WHERE id = 1").fetchone()
+    return dict(row)
+
+
+# ---------------------------------------------------------------------------
+# Gen settings (per-type: plan / content / quiz strategy prompts)
+# ---------------------------------------------------------------------------
+
+_GEN_TYPES = ("plan", "content", "quiz")
+
+
+def get_gen_settings_row() -> dict:
+    """Return {"plan": str, "content": str, "quiz": str}.
+
+    Ensures all three rows exist, creating missing ones with empty defaults.
+    """
+    with db_conn() as conn:
+        for gt in _GEN_TYPES:
+            conn.execute(
+                "INSERT INTO gen_settings (gen_type) VALUES (%s) ON CONFLICT DO NOTHING",
+                (gt,),
+            )
+        rows = conn.execute(
+            "SELECT gen_type, strategy FROM gen_settings ORDER BY gen_type"
+        ).fetchall()
+    return {r["gen_type"]: r["strategy"] for r in rows}
+
+
+def update_gen_settings(
+    plan: str | None = None,
+    content: str | None = None,
+    quiz: str | None = None,
+) -> dict:
+    """Update specific gen-strategy fields (only non-None are set)."""
+    updates = {"plan": plan, "content": content, "quiz": quiz}
+    with db_conn() as conn:
+        for gt, val in updates.items():
+            if val is not None:
+                conn.execute(
+                    "INSERT INTO gen_settings (gen_type, strategy) VALUES (%s, %s) "
+                    "ON CONFLICT (gen_type) DO UPDATE SET strategy = EXCLUDED.strategy",
+                    (gt, val),
+                )
+        rows = conn.execute(
+            "SELECT gen_type, strategy FROM gen_settings ORDER BY gen_type"
+        ).fetchall()
+    return {r["gen_type"]: r["strategy"] for r in rows}
+
+
 def auto_migrate_if_needed() -> None:
     """Migrate data from plans.json to PG if the database is empty.
 

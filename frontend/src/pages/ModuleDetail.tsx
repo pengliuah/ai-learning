@@ -3,10 +3,14 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Loader2, FileText, ListChecks, Sparkles,
-  CheckCircle2, XCircle, ArrowRight, RotateCcw, BookOpen, RefreshCw, Bookmark,
+  CheckCircle2, XCircle, ArrowRight, RotateCcw, BookOpen,
+  BookmarkPlus, Settings,
 } from "lucide-react";
 import { Markdown } from "../components/Markdown";
-import { usePlan, useGenerateQuiz, useGradeQuiz, useSaveAnswers, PLAN_KEYS } from "../hooks/usePlans";
+import { ActionBar } from "../components/ActionBar";
+import { ActionDropdown } from "../components/ActionDropdown";
+import { useToast } from "../components/Toast";
+import { usePlan, useGenerateQuiz, useGradeQuiz, useSaveAnswers, useSaveToIma, PLAN_KEYS } from "../hooks/usePlans";
 import { api } from "../api/client";
 import { StatusBadge, DifficultyBadge } from "../components/StatusBadge";
 import type { Module, Document } from "../api/types";
@@ -36,6 +40,21 @@ export function ModuleDetail() {
   const loadedKey = useRef<string | null>(null);
 
   const generateQuiz = useGenerateQuiz();
+  const saveToIma = useSaveToIma();
+  const { toast } = useToast();
+
+  const handleSaveToIma = (contentType: "content" | "quiz") => {
+    saveToIma.mutate(
+      { planId: planId!, moduleId: moduleId!, contentType },
+      {
+        onSuccess: (res) => {
+          if (res.ok) toast(`已保存到 IMA：${res.title}`, "success");
+          else toast(res.detail || "保存失败", "error");
+        },
+        onError: (e) => toast(`保存失败：${(e as Error).message}`, "error"),
+      },
+    );
+  };
   const gradeQuiz = useGradeQuiz();
   const saveAnswersMutation = useSaveAnswers();
 
@@ -81,6 +100,21 @@ export function ModuleDetail() {
     } finally {
       setStreaming(false);
     }
+  };
+
+  // Regenerate the quiz via the existing endpoint (no backend change).
+  const handleRegenerateQuiz = () => {
+    generateQuiz.mutate(
+      { planId: planId!, moduleId: moduleId! },
+      {
+        onSuccess: () => {
+          setAnswers({});
+          answersRef.current = {};
+          loadedKey.current = null;
+          setRedoing(false);
+        },
+      },
+    );
   };
 
   if (!doc || !module) return <p className="text-sm text-gray-500 dark:text-gray-400">加载中...</p>;
@@ -185,21 +219,8 @@ export function ModuleDetail() {
 
               {hasContent && !streaming && (
                 <div>
-                  <div className="mb-3 flex items-center justify-end gap-2">
-                    <button
-                      onClick={() => navigate(`/coach?goal=${encodeURIComponent(`请把以下学习内容保存到 IMA 笔记，标题为「${doc.plan.title} - ${module.title}」：\n\n${module.content!.markdown}`)}`)}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                    >
-                      <Bookmark className="h-4 w-4" />
-                      保存到 IMA
-                    </button>
-                    <button
-                      onClick={handleGenerateContent}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                      重新生成
-                    </button>
+                  <div className="mb-3 flex justify-end">
+                    <ActionBar onRegenerate={handleGenerateContent} regenerating={streaming} onSaveToIma={() => handleSaveToIma("content")} />
                   </div>
                   <div className="prose prose-sm max-w-none dark:prose-invert">
                     <Markdown>{module.content!.markdown}</Markdown>
@@ -245,22 +266,7 @@ export function ModuleDetail() {
               {hasQuiz && (
                 <div className="space-y-4">
                   <div className="flex justify-end">
-                    <button
-                      onClick={() => generateQuiz.mutate(
-                        { planId: planId!, moduleId: moduleId! },
-                        { onSuccess: () => {
-                          setAnswers({});
-                          answersRef.current = {};
-                          loadedKey.current = null;
-                          setRedoing(false);
-                        } },
-                      )}
-                      disabled={generateQuiz.isPending}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                    >
-                      {generateQuiz.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                      重新生成测验
-                    </button>
+                    <ActionBar onRegenerate={handleRegenerateQuiz} regenerating={generateQuiz.isPending} onSaveToIma={() => handleSaveToIma("quiz")} />
                   </div>
                   {module.quiz!.questions.map((q, i) => (
                     <div key={q.id} className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -345,7 +351,23 @@ function ResultsView({
   onRedo: () => void;
   onRestudy: () => void;
 }) {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const saveToIma = useSaveToIma();
   const r = module.result!;
+
+  const handleSaveToIma = () => {
+    saveToIma.mutate(
+      { planId, moduleId, contentType: "result" },
+      {
+        onSuccess: (res) => {
+          if (res.ok) toast(`已保存到 IMA：${res.title}`, "success");
+          else toast(res.detail || "保存失败", "error");
+        },
+        onError: (e) => toast(`保存失败：${(e as Error).message}`, "error"),
+      },
+    );
+  };
   const quiz = module.quiz!;
   const pct = r.maxScore > 0 ? Math.round((r.totalScore / r.maxScore) * 100) : 0;
 
@@ -455,6 +477,21 @@ function ResultsView({
           <BookOpen className="h-4 w-4" />
           重新学习
         </button>
+        <ActionDropdown
+          label="保存到 IMA"
+          icon={<BookmarkPlus className="h-4 w-4" />}
+          onAction={handleSaveToIma}
+          busy={saveToIma.isPending}
+          menuItems={[
+            {
+              label: "设置",
+              icon: <Settings className="h-4 w-4" />,
+              onClick: () => navigate("/settings/ima"),
+            },
+          ]}
+          title="保存到 IMA"
+          dropUp
+        />
         {onNext && (
           <button
             onClick={onNext}

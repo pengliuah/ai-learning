@@ -1,4 +1,4 @@
-import type { Document, PlanListItem, Quiz, AnswersState, Content, GradingResult } from "./types";
+import type { Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, SaveToImaRequest, SaveToImaResponse } from "./types";
 
 /** 后端 API 基址。开发时走 Vite 代理，生产时走 nginx 反代，均为 /api。 */
 const API_BASE = "/api";
@@ -105,7 +105,34 @@ export const api = {
 
   /** SSE stream for the coach chat. onDelta for text tokens, onTool for
    *  create_plan / search_plans tool events. Resolves on done, throws on error. */
-  streamCoach: async (
+  getImaSettings: () =>
+    json<ImaSettings>("/settings/ima"),
+
+  updateImaSettings: (data: ImaSettingsUpdate) =>
+    json<ImaSettings>("/settings/ima", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  getRegenSettings: () =>
+    json<GenSettings>("/settings/regenerate"),
+
+  updateRegenSettings: (data: GenSettingsUpdate) =>
+    json<GenSettings>("/settings/regenerate", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  saveToIma: (planId: string, data: SaveToImaRequest = {}) =>
+    json<SaveToImaResponse>(`/plans/${planId}/save-to-ima`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+    streamCoach: async (
     goal: string,
     onDelta: (text: string) => void,
     onTool: (data: { phase: string; name: string; output?: string }) => void,

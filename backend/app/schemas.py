@@ -141,3 +141,57 @@ class AnswersState(BaseModel):
 
 class CoachRequest(BaseModel):
     goal: str
+
+
+# ---------------------------------------------------------------------------
+# App settings (IMA credentials + skill prompt, regeneration strategy)
+# ---------------------------------------------------------------------------
+
+class ImaSettings(BaseModel):
+    imaClientId: str = ""
+    imaApiKey: str = ""
+    imaSkillPrompt: str = ""
+
+
+class ImaSettingsUpdate(BaseModel):
+    """PUT /api/settings/ima request body. All fields optional so partial
+    updates are possible (e.g. save only the skill prompt)."""
+    imaClientId: str | None = None
+    imaApiKey: str | None = None
+    imaSkillPrompt: str | None = None
+
+
+class GenSettings(BaseModel):
+    plan: str = ""
+    content: str = ""
+    quiz: str = ""
+
+
+class GenSettingsUpdate(BaseModel):
+    plan: str | None = None
+    content: str | None = None
+    quiz: str | None = None
+
+
+class SaveToImaRequest(BaseModel):
+    """Save-to-IMA request body.
+
+    - ``moduleId``: if set, save that module's content; otherwise save the
+      whole plan overview.
+    - ``contentType``: what to save -- "plan" (overview), "content" (module
+      learning content), "quiz" (quiz questions), "result" (grading results
+      with answer analysis). Defaults to "plan" when no moduleId, "content"
+      when moduleId is given.
+    - ``skillPromptOverride``: if set, use this prompt instead of the stored
+      IMA skill prompt to drive formatting.
+    """
+    moduleId: str | None = None
+    contentType: str | None = None
+    skillPromptOverride: str | None = None
+
+
+class SaveToImaResponse(BaseModel):
+    ok: bool
+    noteId: str | None = None
+    title: str = ""
+    detail: str = ""

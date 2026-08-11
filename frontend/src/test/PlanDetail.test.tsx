@@ -7,6 +7,8 @@ vi.mock('../api/client', () => ({
   api: {
     getPlan: vi.fn(),
     deletePlan: vi.fn(),
+    saveToIma: vi.fn(),
+    createPlan: vi.fn(),
   } as unknown as typeof import('../api/client')['api'],
 }))
 

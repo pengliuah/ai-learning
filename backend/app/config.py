@@ -15,6 +15,7 @@ DATA_DIR = BACKEND_DIR / "data"
 
 ARK_BASE_URL_DEFAULT = "https://ark.cn-beijing.volces.com/api/v3"
 ARK_MODEL_DEFAULT = "doubao-1.5-pro-32k"
+DATABASE_URL_DEFAULT = ""  # e.g. postgresql://user:pass@host:5432/zhixue
 
 # Unified log format, e.g.:
 #   2026-07-26 11:36:04 | 36.163.166.53:13700 | INFO     | app.main | <message>
@@ -40,10 +41,14 @@ class ClientContextFilter(logging.Filter):
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore", case_sensitive=False)
 
+    # LLM connection: the primary source is the model_settings DB row
+    # (configured on the web "模型设置" page); these env vars only serve
+    # as fallback/seed for fields left empty in the database.
     ark_api_key: str | None = None
     ark_base_url: str = ARK_BASE_URL_DEFAULT
     ark_model: str = ARK_MODEL_DEFAULT
     log_level: str = "INFO"
+    database_url: str = DATABASE_URL_DEFAULT
 
 
 settings = Settings()
@@ -104,7 +109,3 @@ def setup_logging() -> None:
     app_access.setLevel(access_level)
     app_access.handlers = [handler]
     app_access.propagate = False
-
-
-def is_configured() -> bool:
-    return bool(settings.ark_api_key)

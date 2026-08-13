@@ -1,4 +1,4 @@
-import type { Document, PlanListItem, Quiz, AnswersState, Content, GradingResult } from "./types";
+import type { Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, SaveToImaRequest, SaveToImaResponse } from "./types";
 
 /**
  * 后端 API 基址。
@@ -21,7 +21,8 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => json<{ configured: boolean; model: string }>("/health"),
 
-  listPlans: () => json<PlanListItem[]>("/plans"),
+  listPlans: (q?: string) =>
+    json<PlanListItem[]>(`/plans${q ? `?q=${encodeURIComponent(q)}` : ""}`),
 
   getPlan: (id: string) => json<Document>(`/plans/${id}`),
 
@@ -106,5 +107,86 @@ export const api = {
     if (errMsg) throw new Error(errMsg);
     if (!doneDoc) throw new Error("stream ended without done event");
     return doneDoc;
+  },
+
+  /** SSE stream for the coach chat. onDelta for text tokens, onTool for
+   *  create_plan / search_plans tool events. Resolves on done, throws on error. */
+  getImaSettings: () =>
+    json<ImaSettings>("/settings/ima"),
+
+  updateImaSettings: (data: ImaSettingsUpdate) =>
+    json<ImaSettings>("/settings/ima", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  getRegenSettings: () =>
+    json<GenSettings>("/settings/regenerate"),
+
+  updateRegenSettings: (data: GenSettingsUpdate) =>
+    json<GenSettings>("/settings/regenerate", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  getModelSettings: () =>
+    json<ModelSettings>("/settings/model"),
+
+  updateModelSettings: (data: ModelSettingsUpdate) =>
+    json<ModelSettings>("/settings/model", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  saveToIma: (planId: string, data: SaveToImaRequest = {}) =>
+    json<SaveToImaResponse>(`/plans/${planId}/save-to-ima`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+    streamCoach: async (
+    goal: string,
+    onDelta: (text: string) => void,
+    onTool: (data: { phase: string; name: string; output?: string }) => void,
+  ): Promise<void> => {
+    const res = await fetch(`${API_BASE}/coach/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ goal }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let errMsg: string | null = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() || "";
+
+      for (const frame of frames) {
+        let eventType = "";
+        let dataStr = "";
+        for (const line of frame.split("\n")) {
+          if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+          else if (line.startsWith("data: ")) dataStr += line.slice(6);
+        }
+        if (!dataStr) continue;
+        const data = JSON.parse(dataStr);
+        if (eventType === "delta") onDelta(data.text);
+        else if (eventType === "tool") onTool(data);
+        else if (eventType === "error") errMsg = data.detail;
+      }
+    }
+
+    if (errMsg) throw new Error(errMsg);
   },
 };

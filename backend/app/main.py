@@ -16,16 +16,24 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from . import store
 from .agent import LearningCoach
-from .config import BACKEND_DIR, is_configured, settings
+from .config import BACKEND_DIR, settings
 from .middleware import AccessLogMiddleware
 from .schemas import (
     AnswersState,
     CoachRequest,
+    GenSettings,
+    GenSettingsUpdate,
+    ImaSettings,
+    ImaSettingsUpdate,
+    ModelSettings,
+    ModelSettingsUpdate,
     ModuleStatus,
     ModuleStatusPatch,
     PlanCreateRequest,
     PlanSource,
     SaveAnswersRequest,
+    SaveToImaRequest,
+    SaveToImaResponse,
 )
 
 app = FastAPI(title="zhixue-backend", version="0.1.0")
@@ -43,10 +51,15 @@ coach = LearningCoach()
 logger = logging.getLogger(__name__)
 
 
+def is_configured() -> bool:
+    """Whether an LLM API key is available (DB values with env fallback)."""
+    return store.is_llm_configured()
+
+
 def _require_configured() -> None:
-    """未配置 ARK_API_KEY 时抛 503，统一拦截所有需要调用 LLM 的端点。"""
+    """未配置模型 API Key 时抛 503，统一拦截所有需要调用 LLM 的端点。"""
     if not is_configured():
-        raise HTTPException(status_code=503, detail="ARK_API_KEY not configured")
+        raise HTTPException(status_code=503, detail="model API key not configured")
 
 
 def _get_doc(plan_id: str):
@@ -69,18 +82,22 @@ def _get_module(doc, module_id: str):
 def health():
     """健康检查。
 
-    探测后端是否就绪、是否已配置火山方舟 API Key。不调用任何 LLM，
+    探测后端是否就绪、是否已配置模型 API Key。不调用任何 LLM，
     可直接用于存活/就绪探针（liveness/readiness probe）。
 
     返回:
         200 ``{"configured": bool, "model": str}``
 
-        - ``configured``: 是否已设置 ``ARK_API_KEY``；为 false 时，
+        - ``configured``: 是否已设置模型 API Key；为 false 时，
           所有需要 LLM 的生成端点会返回 503。
-        - ``model``: 当前使用的模型名（``ARK_MODEL``，默认
-          ``doubao-1.5-pro-32k``，可填推理端点 ID 如 ``ep-xxx``）。
+        - ``model``: 当前生效的模型名（网页模型设置优先，其次环境变量，
+          默认 ``doubao-1.5-pro-32k``，可填推理端点 ID 如 ``ep-xxx``）。
     """
-    return {"configured": is_configured(), "model": settings.ark_model}
+    try:
+        _, model, _ = store.get_llm_config()
+    except Exception:
+        model = settings.ark_model
+    return {"configured": is_configured(), "model": model}
 
 
 @app.post("/api/plans")
@@ -89,7 +106,7 @@ def create_plan(req: PlanCreateRequest):
 
     调用 DeepAgents Planner 子代理（``create_deep_agent`` +
     ``response_format=Plan``），根据主题或粘贴的学习资料生成结构化、
-    多模块的学习计划，并持久化到 ``backend/data/plans.json``。
+    多模块的学习计划，并持久化到 PostgreSQL 数据库。
     模块 id 会被规范化，状态初始化为 ``not_started``。
 
     请求体 ``PlanCreateRequest``:
@@ -118,9 +135,10 @@ def create_plan(req: PlanCreateRequest):
 
 
 @app.get("/api/plans")
-def list_plans():
-    """列出所有计划（概要视图）。
+def list_plans(q: str | None = None):
+    """列出计划（概要视图），可按标题关键词过滤。
 
+    查询参数 ``q`` (str, 可选) 按计划标题做大小写不敏感子串过滤；为空返回全部。
     返回轻量列表，用于首页计划列表展示。进度按「已完成模块数 / 模块总数」计算。
 
     返回:
@@ -130,8 +148,8 @@ def list_plans():
         - ``createdAt`` (datetime)
         - ``progress`` (float, 0.0~1.0)
     """
-    items = store.list_items()
-    logger.info("list_plans: count=%d", len(items))
+    items = store.list_items(q)
+    logger.info("list_plans: q=%s count=%d", (q or "-")[:50], len(items))
     return items
 
 
@@ -483,6 +501,102 @@ async def coach_stream(req: CoachRequest):
             yield _sse("error", {"detail": str(exc)})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/api/settings/ima")
+def get_ima_settings():
+    """读取 IMA 设置（凭证 + skill prompt）。"""
+    row = store.get_ima_settings_row()
+    return ImaSettings(
+        imaClientId=row["ima_client_id"],
+        imaApiKey=row["ima_api_key"],
+        imaSkillPrompt=row["ima_skill_prompt"],
+    )
+
+
+@app.put("/api/settings/ima")
+def put_ima_settings(req: ImaSettingsUpdate):
+    """更新 IMA 设置（仅更新提供的字段）。"""
+    row = store.update_ima_settings(
+        client_id=req.imaClientId,
+        api_key=req.imaApiKey,
+        skill_prompt=req.imaSkillPrompt,
+    )
+    logger.info("put_ima_settings: updated (client_id set=%s, prompt set=%s)",
+                bool(row["ima_client_id"]), bool(row["ima_skill_prompt"]))
+    return ImaSettings(
+        imaClientId=row["ima_client_id"],
+        imaApiKey=row["ima_api_key"],
+        imaSkillPrompt=row["ima_skill_prompt"],
+    )
+
+
+@app.get("/api/settings/regenerate")
+def get_regen_settings():
+    """读取生成策略设置（按类型：plan/content/quiz）。"""
+    row = store.get_gen_settings_row()
+    return GenSettings(plan=row["plan"], content=row["content"], quiz=row["quiz"])
+
+
+@app.put("/api/settings/regenerate")
+def put_regen_settings(req: GenSettingsUpdate):
+    """更新生成策略设置（仅更新提供的字段）。"""
+    row = store.update_gen_settings(
+        plan=req.plan, content=req.content, quiz=req.quiz
+    )
+    logger.info("put_regen_settings: plan=%s content=%s quiz=%s",
+                bool(row["plan"]), bool(row["content"]), bool(row["quiz"]))
+    return GenSettings(plan=row["plan"], content=row["content"], quiz=row["quiz"])
+
+
+@app.get("/api/settings/model")
+def get_model_settings():
+    """读取当前生效的模型设置（网页配置优先，环境变量回退）。"""
+    api_key, model, base_url = store.get_llm_config()
+    return ModelSettings(apiKey=api_key, model=model, baseUrl=base_url)
+
+
+@app.put("/api/settings/model")
+def put_model_settings(req: ModelSettingsUpdate):
+    """保存模型设置（仅更新提供的字段），并刷新已缓存的模型实例。"""
+    row = store.update_model_settings(
+        api_key=req.apiKey,
+        model=req.model,
+        base_url=req.baseUrl,
+    )
+    reset = getattr(coach, "reset_model_runtime", None)
+    if reset:
+        reset()
+    logger.info("put_model_settings: updated (key set=%s, model set=%s)",
+                bool(row["api_key"]), bool(row["model"]))
+    return ModelSettings(
+        apiKey=row["api_key"] or settings.ark_api_key or "",
+        model=row["model"] or settings.ark_model,
+        baseUrl=row["base_url"] or settings.ark_base_url,
+    )
+
+
+@app.post("/api/plans/{plan_id}/save-to-ima")
+def save_to_ima(plan_id: str, req: SaveToImaRequest):
+    """将计划或模块内容保存到 IMA 笔记。
+
+    读取已存储的 IMA 凭证与 skill prompt，按需用 LLM 格式化后
+    调用 IMA import_doc API 创建笔记。若 ``moduleId`` 为空则保存整个计划概览。
+
+    请求体 ``SaveToImaRequest``:
+        - ``moduleId`` (str, 可选): 指定模块则保存该模块内容，为空保存整个计划。
+        - ``skillPromptOverride`` (str, 可选): 覆盖存储的 IMA skill prompt。
+
+    返回 ``SaveToImaResponse``: ``{ok, noteId, title, detail}``。
+    """
+    doc = _get_doc(plan_id)
+    module = None
+    if req.moduleId:
+        module = _get_module(doc, req.moduleId)
+    return coach.save_to_ima(
+        doc.plan, module=module, content_type=req.contentType,
+        skill_prompt_override=req.skillPromptOverride,
+    )
 
 
 def _sse(event: str, data) -> str:

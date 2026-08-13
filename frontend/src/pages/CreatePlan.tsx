@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useCreatePlan } from "../hooks/usePlans";
 
 export function CreatePlan() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const createPlan = useCreatePlan();
   const [mode, setMode] = useState<"topic" | "materials">("topic");
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(() => searchParams.get("topic") ?? "");
 
   const handleSubmit = () => {
     if (!input.trim()) return;

@@ -94,3 +94,54 @@ export interface AnswersState {
   answered: number;
   total: number;
 }
+
+export interface ImaSettings {
+  imaClientId: string;
+  imaApiKey: string;
+  imaSkillPrompt: string;
+}
+
+export interface ImaSettingsUpdate {
+  imaClientId?: string | null;
+  imaApiKey?: string | null;
+  imaSkillPrompt?: string | null;
+}
+
+export interface GenSettings {
+  plan: string;
+  content: string;
+  quiz: string;
+}
+
+export interface GenSettingsUpdate {
+  plan?: string | null;
+  content?: string | null;
+  quiz?: string | null;
+}
+
+export interface ModelSettings {
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+}
+
+export interface ModelSettingsUpdate {
+  apiKey?: string | null;
+  model?: string | null;
+  baseUrl?: string | null;
+}
+
+export type SaveToImaContentType = "plan" | "content" | "quiz" | "result";
+
+export interface SaveToImaRequest {
+  moduleId?: string | null;
+  contentType?: SaveToImaContentType | null;
+  skillPromptOverride?: string | null;
+}
+
+export interface SaveToImaResponse {
+  ok: boolean;
+  noteId: string | null;
+  title: string;
+  detail: string;
+}

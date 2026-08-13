@@ -1,8 +1,10 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, ChevronRight, Trash2, Clock } from "lucide-react";
-import { usePlan, useDeletePlan, PLAN_KEYS } from "../hooks/usePlans";
+import { usePlan, useDeletePlan, useCreatePlan, useSaveToIma, PLAN_KEYS } from "../hooks/usePlans";
+import { useToast } from "../components/Toast";
 import { ProgressBar } from "../components/ProgressBar";
 import { StatusBadge, DifficultyBadge } from "../components/StatusBadge";
+import { ActionBar } from "../components/ActionBar";
 
 const LEVEL_LABEL: Record<string, string> = {
   beginner: "入门",
@@ -15,6 +17,34 @@ export function PlanDetail() {
   const navigate = useNavigate();
   const { data: doc, isLoading } = usePlan(planId);
   const deletePlan = useDeletePlan();
+  const createPlan = useCreatePlan();
+  const saveToIma = useSaveToIma();
+  const { toast } = useToast();
+
+  const handleSaveToIma = () => {
+    saveToIma.mutate(
+      { planId: planId!, contentType: "plan" },
+      {
+        onSuccess: (res) => {
+          if (res.ok) toast(`已保存到 IMA：${res.title}`, "success");
+          else toast(res.detail || "保存失败", "error");
+        },
+        onError: (e) => toast(`保存失败：${(e as Error).message}`, "error"),
+      },
+    );
+  };
+
+  // Re-run plan generation from the original source input/mode. Produces a
+  // fresh plan (new id) rather than mutating the existing one -- the backend
+  // has no in-place regenerate endpoint, so this reuses POST /api/plans.
+  const handleRegenerate = () => {
+    if (!doc) return;
+    if (!confirm(`基于原始输入重新生成「${doc.plan.title}」？将创建一个新的计划。`)) return;
+    createPlan.mutate(
+      { input: doc.source.input, mode: doc.source.mode },
+      { onSuccess: (newDoc) => navigate(`/plans/${newDoc.id}`) },
+    );
+  };
 
   if (isLoading) return <p className="text-sm text-gray-500 dark:text-gray-400">加载中...</p>;
   if (!doc) return <p className="text-sm text-gray-500 dark:text-gray-400">计划不存在</p>;
@@ -33,16 +63,19 @@ export function PlanDetail() {
           <ArrowLeft className="h-4 w-4" />
           返回
         </button>
-        <button
-          onClick={() => {
-            if (confirm(`删除「${plan.title}」？`)) {
-              deletePlan.mutate(planId!, { onSuccess: () => navigate("/") });
-            }
-          }}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/40 dark:hover:text-red-400"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <ActionBar onRegenerate={handleRegenerate} regenerating={createPlan.isPending} onSaveToIma={handleSaveToIma} regenType="plan" />
+          <button
+            onClick={() => {
+              if (confirm(`删除「${plan.title}」？`)) {
+                deletePlan.mutate(planId!, { onSuccess: () => navigate("/") });
+              }
+            }}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/40 dark:hover:text-red-400"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">

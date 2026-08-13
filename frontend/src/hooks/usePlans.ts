@@ -9,7 +9,7 @@ export const PLAN_KEYS = {
 export function usePlans() {
   return useQuery({
     queryKey: PLAN_KEYS.list,
-    queryFn: api.listPlans,
+    queryFn: () => api.listPlans(),
   });
 }
 
@@ -101,11 +101,26 @@ export function usePatchModule() {
 }
 
 
+export function useSaveToIma() {
+  return useMutation({
+    mutationFn: ({
+      planId,
+      moduleId,
+      contentType,
+    }: {
+      planId: string;
+      moduleId?: string;
+      contentType?: "plan" | "content" | "quiz" | "result";
+    }) =>
+      api.saveToIma(planId, { moduleId, contentType }),
+  });
+}
+
 export function useHealth() {
   return useQuery({
     queryKey: ["health"] as const,
     queryFn: api.health,
-    refetchInterval: 15000,
+    refetchInterval: 300000,  // 5 分钟
     retry: false,
   });
 }

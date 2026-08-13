@@ -120,7 +120,7 @@ export function useHealth() {
   return useQuery({
     queryKey: ["health"] as const,
     queryFn: api.health,
-    refetchInterval: 15000,
+    refetchInterval: 300000,  // 5 分钟
     retry: false,
   });
 }

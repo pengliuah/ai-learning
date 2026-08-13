@@ -9,6 +9,7 @@ import { ModuleDetail } from "./pages/ModuleDetail";
 import { Coach } from "./pages/Coach";
 import { ImaSettings } from "./pages/ImaSettings";
 import { RegenerateSettings } from "./pages/RegenerateSettings";
+import { ModelSettings } from "./pages/ModelSettings";
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,7 @@ export default function App() {
               <Route path="/coach" element={<Coach />} />
               <Route path="/settings/ima" element={<ImaSettings />} />
               <Route path="/settings/regenerate" element={<RegenerateSettings />} />
+              <Route path="/settings/model" element={<ModelSettings />} />
             </Routes>
           </Layout>
         </BrowserRouter>

@@ -2,17 +2,23 @@ from __future__ import annotations
 
 from langchain_openai import ChatOpenAI
 
-from .config import settings
+from . import store
 
 
 def build_chat_model(**kwargs) -> ChatOpenAI:
-    """ChatOpenAI pointed at the Volcengine Ark OpenAI-compatible endpoint."""
-    if not settings.ark_api_key:
-        raise RuntimeError("ARK_API_KEY is not configured")
+    """ChatOpenAI pointed at the configured OpenAI-compatible endpoint.
+
+    Connection settings come from the ``model_settings`` DB row (saved via
+    the web UI), with ARK_* environment variables as fallback for empty
+    fields. Extra ``kwargs`` override the effective config.
+    """
+    api_key, model, base_url = store.get_llm_config()
+    if not api_key:
+        raise RuntimeError("model API key is not configured")
     params = {
-        "model": settings.ark_model,
-        "api_key": settings.ark_api_key,
-        "base_url": settings.ark_base_url,
+        "model": model,
+        "api_key": api_key,
+        "base_url": base_url,
         "streaming": False,
     }
     params.update(kwargs)

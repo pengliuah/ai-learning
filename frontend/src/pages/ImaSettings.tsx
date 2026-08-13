@@ -62,7 +62,7 @@ export function ImaSettings() {
           >
             ima.qq.com/agent-interface
           </a>{" "}
-          获取。保存到 IMA 功能需后端支持，即将上线。
+          获取。
         </p>
 
         <label className="mt-3 block text-xs font-medium text-gray-600 dark:text-gray-300">

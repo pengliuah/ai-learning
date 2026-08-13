@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Save, Loader2 } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { ArrowLeft, Save, Loader2, FileText, BookOpen, HelpCircle } from "lucide-react";
 import { useRegenSettings, useUpdateRegenSettings } from "../hooks/useSettings";
 import { useToast } from "../components/Toast";
 
@@ -34,6 +34,9 @@ const FIELDS: FieldDef[] = [
 
 export function RegenerateSettings() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const regenType = (location.state as any)?.regenType || "plan";
+
   const { data, isLoading } = useRegenSettings();
   const updateMutation = useUpdateRegenSettings();
   const { toast } = useToast();
@@ -71,6 +74,14 @@ export function RegenerateSettings() {
     quiz: setQuiz,
   };
 
+  const TAB_ICONS: Record<FieldDef["key"], React.ReactNode> = {
+    plan: <FileText className="h-4 w-4" />,
+    content: <BookOpen className="h-4 w-4" />,
+    quiz: <HelpCircle className="h-4 w-4" />,
+  };
+
+  const activeField = FIELDS.find((f) => f.key === regenType)!;
+
   return (
     <div className="mx-auto max-w-2xl">
       <button
@@ -83,19 +94,20 @@ export function RegenerateSettings() {
 
       <h1 className="mb-6 text-lg font-semibold text-gray-900 dark:text-gray-100">重新生成设置</h1>
 
-      {FIELDS.map((field) => (
-        <section key={field.key} className="mb-6 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{field.label}</h2>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{field.desc}</p>
-          <textarea
-            value={values[field.key]}
-            onChange={(e) => setters[field.key](e.target.value)}
-            rows={5}
-            placeholder={field.placeholder}
-            className="mt-2 w-full rounded-md border border-gray-300 bg-white p-3 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-          />
-        </section>
-      ))}
+      <section className="mb-6 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+        <h2 className="mb-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+          <span className="mr-1.5 inline-block align-middle">{TAB_ICONS[activeField.key]}</span>
+          {activeField.label}
+        </h2>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{activeField.desc}</p>
+        <textarea
+          value={values[activeField.key]}
+          onChange={(e) => setters[activeField.key](e.target.value)}
+          rows={6}
+          placeholder={activeField.placeholder}
+          className="mt-2 w-full rounded-md border border-gray-300 bg-white p-3 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+        />
+      </section>
 
       <button
         onClick={handleSave}

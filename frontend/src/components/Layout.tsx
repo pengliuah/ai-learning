@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { BookOpen, Sun, Moon, Bot } from "lucide-react";
+import { BookOpen, Sun, Moon, Bot, Settings } from "lucide-react";
 import { HealthBanner } from "./HealthBanner";
 import { useTheme } from "../hooks/useTheme";
 
@@ -21,13 +21,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <Bot className="h-4 w-4" />
             AI 教练
           </Link>
-          <button
-            onClick={toggleTheme}
-            className="ml-auto rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-            title={theme === "dark" ? "切换日间模式" : "切换夜间模式"}
-          >
-            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </button>
+
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              onClick={toggleTheme}
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+              title={theme === "dark" ? "切换日间模式" : "切换夜间模式"}
+            >
+              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
+            <Link
+              to="/settings/model"
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+              title="模型设置"
+            >
+              <Settings className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
       </header>
       <HealthBanner />

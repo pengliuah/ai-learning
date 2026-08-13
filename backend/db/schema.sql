@@ -189,3 +189,21 @@ CREATE TABLE gen_settings (
 CREATE TRIGGER gen_settings_set_updated_at
     BEFORE UPDATE ON gen_settings
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- model_settings  -  single-row table for LLM (Ark/OpenAI 兼容) connection
+--
+-- API Key / 模型 / Base URL 在网页「模型设置」中配置并保存到此表。
+-- 空值回退到 ARK_* 环境变量及内置默认值，因此环境变量仍可作为新部署的
+-- 初始配置。One row (id=1) per deployment.
+-- ---------------------------------------------------------------------------
+CREATE TABLE model_settings (
+    id          INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    api_key     TEXT NOT NULL DEFAULT '',
+    model       TEXT NOT NULL DEFAULT '',
+    base_url    TEXT NOT NULL DEFAULT '',
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TRIGGER model_settings_set_updated_at
+    BEFORE UPDATE ON model_settings
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();

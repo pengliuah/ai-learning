@@ -119,6 +119,18 @@ export interface GenSettingsUpdate {
   quiz?: string | null;
 }
 
+export interface ModelSettings {
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+}
+
+export interface ModelSettingsUpdate {
+  apiKey?: string | null;
+  model?: string | null;
+  baseUrl?: string | null;
+}
+
 export type SaveToImaContentType = "plan" | "content" | "quiz" | "result";
 
 export interface SaveToImaRequest {

@@ -22,7 +22,7 @@ from typing import Callable
 
 from psycopg.types.json import Jsonb
 
-from .config import DATA_DIR
+from .config import DATA_DIR, settings
 from .db import db_conn
 from .schemas import (
     Assessment,
@@ -512,3 +512,77 @@ def auto_migrate_if_needed() -> None:
         except Exception as exc:
             logger.error("auto_migrate: failed to import %s: %s", plan_id, exc)
     logger.info("auto_migrate: done, %d/%d document(s) migrated", migrated, len(raw))
+
+
+# ---------------------------------------------------------------------------
+# Model settings (single-row: LLM API key / model / base URL)
+#
+# Saved from the web UI ("模型设置"). Empty fields fall back to the ARK_*
+# environment variables (and their built-in defaults), so env vars still
+# seed fresh deployments.
+# ---------------------------------------------------------------------------
+
+def get_model_settings_row() -> dict:
+    """Return the model_settings row as a dict, creating defaults if missing."""
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM model_settings WHERE id = 1").fetchone()
+        if row is None:
+            conn.execute("INSERT INTO model_settings (id) VALUES (1)")
+            row = conn.execute("SELECT * FROM model_settings WHERE id = 1").fetchone()
+    return dict(row)
+
+
+def update_model_settings(
+    api_key: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+) -> dict:
+    """Update model settings fields (only non-None are set, values stripped)."""
+    sets: list[str] = []
+    params: list = []
+    if api_key is not None:
+        sets.append("api_key = %s")
+        params.append(api_key.strip())
+    if model is not None:
+        sets.append("model = %s")
+        params.append(model.strip())
+    if base_url is not None:
+        sets.append("base_url = %s")
+        params.append(base_url.strip())
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT INTO model_settings (id) VALUES (1) ON CONFLICT DO NOTHING"
+        )
+        if sets:
+            params.append(1)
+            conn.execute(
+                f"UPDATE model_settings SET {', '.join(sets)} WHERE id = %s",
+                params,
+            )
+        row = conn.execute("SELECT * FROM model_settings WHERE id = 1").fetchone()
+    return dict(row)
+
+
+def get_llm_config() -> tuple[str, str, str]:
+    """Effective LLM connection config ``(api_key, model, base_url)``.
+
+    Non-empty values saved in the DB (web UI) win; empty fields fall back
+    to the ARK_* environment variables / built-in defaults.
+    """
+    row = get_model_settings_row()
+    api_key = row["api_key"] or settings.ark_api_key or ""
+    model = row["model"] or settings.ark_model
+    base_url = row["base_url"] or settings.ark_base_url
+    return api_key, model, base_url
+
+
+def is_llm_configured() -> bool:
+    """True when an LLM API key is available (DB first, env fallback).
+
+    Falls back to the env-only check when the database is unreachable so
+    ``/api/health`` keeps answering during a PG outage.
+    """
+    try:
+        return bool(get_llm_config()[0])
+    except Exception:
+        return bool(settings.ark_api_key)

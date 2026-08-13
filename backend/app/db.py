@@ -199,6 +199,27 @@ def init_schema() -> None:
                         )
                     conn.execute("DROP TABLE app_settings")
                     logger.info("init_schema: migrated app_settings -> ima_settings + gen_settings")
+
+                # 4. Create model_settings if missing (LLM config saved from
+                #    the web UI; empty values fall back to ARK_* env vars).
+                if not conn.execute(
+                    "SELECT to_regclass('public.model_settings')"
+                ).fetchone()[0]:
+                    conn.execute(
+                        """CREATE TABLE model_settings (
+                               id          INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+                               api_key     TEXT NOT NULL DEFAULT '',
+                               model       TEXT NOT NULL DEFAULT '',
+                               base_url    TEXT NOT NULL DEFAULT '',
+                               updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+                           )"""
+                    )
+                    conn.execute(
+                        """CREATE TRIGGER model_settings_set_updated_at
+                           BEFORE UPDATE ON model_settings
+                           FOR EACH ROW EXECUTE FUNCTION set_updated_at()"""
+                    )
+                    logger.info("init_schema: model_settings table added")
         _schema_ok = True
     except Exception:
         _schema_ok = False

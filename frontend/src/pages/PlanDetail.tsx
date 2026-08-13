@@ -64,7 +64,7 @@ export function PlanDetail() {
           返回
         </button>
         <div className="flex items-center gap-2">
-          <ActionBar onRegenerate={handleRegenerate} regenerating={createPlan.isPending} onSaveToIma={handleSaveToIma} />
+          <ActionBar onRegenerate={handleRegenerate} regenerating={createPlan.isPending} onSaveToIma={handleSaveToIma} regenType="plan" />
           <button
             onClick={() => {
               if (confirm(`删除「${plan.title}」？`)) {

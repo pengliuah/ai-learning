@@ -1,4 +1,4 @@
-import type { Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, SaveToImaRequest, SaveToImaResponse } from "./types";
+import type { Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, SaveToImaRequest, SaveToImaResponse } from "./types";
 
 /** 后端 API 基址。开发时走 Vite 代理，生产时走 nginx 反代，均为 /api。 */
 const API_BASE = "/api";
@@ -120,6 +120,16 @@ export const api = {
 
   updateRegenSettings: (data: GenSettingsUpdate) =>
     json<GenSettings>("/settings/regenerate", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  getModelSettings: () =>
+    json<ModelSettings>("/settings/model"),
+
+  updateModelSettings: (data: ModelSettingsUpdate) =>
+    json<ModelSettings>("/settings/model", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),

@@ -41,6 +41,9 @@ class ClientContextFilter(logging.Filter):
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore", case_sensitive=False)
 
+    # LLM connection: the primary source is the model_settings DB row
+    # (configured on the web "模型设置" page); these env vars only serve
+    # as fallback/seed for fields left empty in the database.
     ark_api_key: str | None = None
     ark_base_url: str = ARK_BASE_URL_DEFAULT
     ark_model: str = ARK_MODEL_DEFAULT
@@ -106,7 +109,3 @@ def setup_logging() -> None:
     app_access.setLevel(access_level)
     app_access.handlers = [handler]
     app_access.propagate = False
-
-
-def is_configured() -> bool:
-    return bool(settings.ark_api_key)

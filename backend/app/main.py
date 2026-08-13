@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from . import store
 from .agent import LearningCoach
-from .config import BACKEND_DIR, is_configured, settings
+from .config import BACKEND_DIR, settings
 from .middleware import AccessLogMiddleware
 from .schemas import (
     AnswersState,
@@ -25,6 +25,8 @@ from .schemas import (
     GenSettingsUpdate,
     ImaSettings,
     ImaSettingsUpdate,
+    ModelSettings,
+    ModelSettingsUpdate,
     ModuleStatus,
     ModuleStatusPatch,
     PlanCreateRequest,
@@ -49,10 +51,15 @@ coach = LearningCoach()
 logger = logging.getLogger(__name__)
 
 
+def is_configured() -> bool:
+    """Whether an LLM API key is available (DB values with env fallback)."""
+    return store.is_llm_configured()
+
+
 def _require_configured() -> None:
-    """未配置 ARK_API_KEY 时抛 503，统一拦截所有需要调用 LLM 的端点。"""
+    """未配置模型 API Key 时抛 503，统一拦截所有需要调用 LLM 的端点。"""
     if not is_configured():
-        raise HTTPException(status_code=503, detail="ARK_API_KEY not configured")
+        raise HTTPException(status_code=503, detail="model API key not configured")
 
 
 def _get_doc(plan_id: str):
@@ -75,18 +82,22 @@ def _get_module(doc, module_id: str):
 def health():
     """健康检查。
 
-    探测后端是否就绪、是否已配置火山方舟 API Key。不调用任何 LLM，
+    探测后端是否就绪、是否已配置模型 API Key。不调用任何 LLM，
     可直接用于存活/就绪探针（liveness/readiness probe）。
 
     返回:
         200 ``{"configured": bool, "model": str}``
 
-        - ``configured``: 是否已设置 ``ARK_API_KEY``；为 false 时，
+        - ``configured``: 是否已设置模型 API Key；为 false 时，
           所有需要 LLM 的生成端点会返回 503。
-        - ``model``: 当前使用的模型名（``ARK_MODEL``，默认
-          ``doubao-1.5-pro-32k``，可填推理端点 ID 如 ``ep-xxx``）。
+        - ``model``: 当前生效的模型名（网页模型设置优先，其次环境变量，
+          默认 ``doubao-1.5-pro-32k``，可填推理端点 ID 如 ``ep-xxx``）。
     """
-    return {"configured": is_configured(), "model": settings.ark_model}
+    try:
+        _, model, _ = store.get_llm_config()
+    except Exception:
+        model = settings.ark_model
+    return {"configured": is_configured(), "model": model}
 
 
 @app.post("/api/plans")
@@ -536,6 +547,33 @@ def put_regen_settings(req: GenSettingsUpdate):
     logger.info("put_regen_settings: plan=%s content=%s quiz=%s",
                 bool(row["plan"]), bool(row["content"]), bool(row["quiz"]))
     return GenSettings(plan=row["plan"], content=row["content"], quiz=row["quiz"])
+
+
+@app.get("/api/settings/model")
+def get_model_settings():
+    """读取当前生效的模型设置（网页配置优先，环境变量回退）。"""
+    api_key, model, base_url = store.get_llm_config()
+    return ModelSettings(apiKey=api_key, model=model, baseUrl=base_url)
+
+
+@app.put("/api/settings/model")
+def put_model_settings(req: ModelSettingsUpdate):
+    """保存模型设置（仅更新提供的字段），并刷新已缓存的模型实例。"""
+    row = store.update_model_settings(
+        api_key=req.apiKey,
+        model=req.model,
+        base_url=req.baseUrl,
+    )
+    reset = getattr(coach, "reset_model_runtime", None)
+    if reset:
+        reset()
+    logger.info("put_model_settings: updated (key set=%s, model set=%s)",
+                bool(row["api_key"]), bool(row["model"]))
+    return ModelSettings(
+        apiKey=row["api_key"] or settings.ark_api_key or "",
+        model=row["model"] or settings.ark_model,
+        baseUrl=row["base_url"] or settings.ark_base_url,
+    )
 
 
 @app.post("/api/plans/{plan_id}/save-to-ima")

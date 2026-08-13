@@ -31,7 +31,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 
 from . import ima, store
-from .config import BACKEND_DIR, is_configured
+from .config import BACKEND_DIR
 from .llm import build_chat_model, build_streaming_model
 from .schemas import (
     Content,
@@ -129,6 +129,11 @@ class LearningCoach:
 
     def __init__(self) -> None:
         self._graphs: dict | None = None
+        self._chat_agent = None
+
+    def reset_model_runtime(self) -> None:
+        """Drop cached agents so the next call rebuilds with new model config."""
+        self._graphs = None
         self._chat_agent = None
 
     @staticmethod
@@ -289,8 +294,8 @@ class LearningCoach:
 
         title, body = self._gather_for_ima(plan, module, ct)
 
-        # If skill prompt is set and ARK is configured, use LLM to format
-        if skill_prompt and is_configured():
+        # If skill prompt is set and an LLM key is configured, use LLM to format
+        if skill_prompt and store.is_llm_configured():
             try:
                 body = self._format_for_ima(body, skill_prompt)
             except Exception as exc:

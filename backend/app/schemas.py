@@ -173,6 +173,28 @@ class GenSettingsUpdate(BaseModel):
     quiz: str | None = None
 
 
+class ModelSettings(BaseModel):
+    """Effective LLM connection settings (DB values with ARK_* env fallback)."""
+    apiKey: str = ""
+    model: str = ""
+    baseUrl: str = ""
+
+
+class ModelSettingsUpdate(BaseModel):
+    """PUT /api/settings/model request body. All fields optional so partial
+    updates are possible (e.g. change only the model)."""
+    apiKey: str | None = None
+    model: str | None = None
+    baseUrl: str | None = None
+
+
+class ModelTestResult(BaseModel):
+    """POST /api/settings/model/test response."""
+    ok: bool
+    detail: str = ""
+    model: str = ""
+
+
 class SaveToImaRequest(BaseModel):
     """Save-to-IMA request body.
 

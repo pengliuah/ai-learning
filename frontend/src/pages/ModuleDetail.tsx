@@ -220,7 +220,7 @@ export function ModuleDetail() {
               {hasContent && !streaming && (
                 <div>
                   <div className="mb-3 flex justify-end">
-                    <ActionBar onRegenerate={handleGenerateContent} regenerating={streaming} onSaveToIma={() => handleSaveToIma("content")} />
+                    <ActionBar onRegenerate={handleGenerateContent} regenerating={streaming} onSaveToIma={() => handleSaveToIma("content")} regenType="content" />
                   </div>
                   <div className="prose prose-sm max-w-none dark:prose-invert">
                     <Markdown>{module.content!.markdown}</Markdown>
@@ -266,7 +266,7 @@ export function ModuleDetail() {
               {hasQuiz && (
                 <div className="space-y-4">
                   <div className="flex justify-end">
-                    <ActionBar onRegenerate={handleRegenerateQuiz} regenerating={generateQuiz.isPending} onSaveToIma={() => handleSaveToIma("quiz")} />
+                    <ActionBar onRegenerate={handleRegenerateQuiz} regenerating={generateQuiz.isPending} onSaveToIma={() => handleSaveToIma("quiz")} regenType="quiz" />
                   </div>
                   {module.quiz!.questions.map((q, i) => (
                     <div key={q.id} className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">

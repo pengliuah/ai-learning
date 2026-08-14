@@ -219,9 +219,6 @@ export function ModuleDetail() {
 
               {hasContent && !streaming && (
                 <div>
-                  <div className="mb-3 flex justify-end">
-                    <ActionBar onRegenerate={handleGenerateContent} regenerating={streaming} onSaveToIma={() => handleSaveToIma("content")} regenType="content" />
-                  </div>
                   <div className="prose prose-sm max-w-none dark:prose-invert">
                     <Markdown>{module.content!.markdown}</Markdown>
                   </div>
@@ -265,9 +262,6 @@ export function ModuleDetail() {
 
               {hasQuiz && (
                 <div className="space-y-4">
-                  <div className="flex justify-end">
-                    <ActionBar onRegenerate={handleRegenerateQuiz} regenerating={generateQuiz.isPending} onSaveToIma={() => handleSaveToIma("quiz")} regenType="quiz" />
-                  </div>
                   {module.quiz!.questions.map((q, i) => (
                     <div key={q.id} className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
                       <p className="mb-3 text-sm font-medium text-gray-900 dark:text-gray-100">
@@ -333,6 +327,19 @@ export function ModuleDetail() {
             </div>
           )}
         </>
+      )}
+
+      {/* 保存到 IMA / 重新生成：仅在当前页签有内容时显示，固定在页面右下角 */}
+      {!(hasResult && !redoing) && ((tab === "content" && hasContent && !streaming) || (tab === "quiz" && hasQuiz)) && (
+        <div className="fixed bottom-6 right-6 z-30">
+          <ActionBar
+            onRegenerate={tab === "content" ? handleGenerateContent : handleRegenerateQuiz}
+            regenerating={tab === "content" ? streaming : generateQuiz.isPending}
+            onSaveToIma={() => handleSaveToIma(tab)}
+            regenType={tab === "content" ? "content" : "quiz"}
+            dropUp
+          />
+        </div>
       )}
     </div>
   );

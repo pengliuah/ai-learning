@@ -64,7 +64,6 @@ export function PlanDetail() {
           返回
         </button>
         <div className="flex items-center gap-2">
-          <ActionBar onRegenerate={handleRegenerate} regenerating={createPlan.isPending} onSaveToIma={handleSaveToIma} regenType="plan" />
           <button
             onClick={() => {
               if (confirm(`删除「${plan.title}」？`)) {
@@ -117,6 +116,19 @@ export function PlanDetail() {
           </button>
         ))}
       </div>
+
+      {/* 保存到 IMA / 重新生成：仅在计划有内容时显示，固定在页面右下角 */}
+      {plan.modules.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-30">
+          <ActionBar
+            onRegenerate={handleRegenerate}
+            regenerating={createPlan.isPending}
+            onSaveToIma={handleSaveToIma}
+            regenType="plan"
+            dropUp
+          />
+        </div>
+      )}
     </div>
   );
 }

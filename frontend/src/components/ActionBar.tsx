@@ -9,13 +9,15 @@ interface Props {
   onSaveToIma?: () => void;
   regenerating?: boolean;
   className?: string;
+  /** Open caret menus upward (for bars pinned near the page bottom). */
+  dropUp?: boolean;
 }
 
 /** Shared action bar: 保存到 IMA + 重新生成, each a split button whose caret
  *  opens a dropdown with a 更多 entry. The two buttons open *different*
  *  settings pages -- IMA save config vs. regenerate strategy. Primary actions
  *  fall back to a toast when a page doesn't wire a real handler. */
-export function ActionBar({ onRegenerate, onSaveToIma, regenerating, className, regenType = "plan" }: Props) {
+export function ActionBar({ onRegenerate, onSaveToIma, regenerating, className, regenType = "plan", dropUp }: Props) {
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -40,6 +42,7 @@ export function ActionBar({ onRegenerate, onSaveToIma, regenerating, className, 
         }
         menuItems={[imaSettings]}
         title="保存到 IMA"
+        dropUp={dropUp}
       />
       <ActionDropdown
         label="重新生成"
@@ -50,6 +53,7 @@ export function ActionBar({ onRegenerate, onSaveToIma, regenerating, className, 
         menuItems={[regenSettings]}
         busy={regenerating}
         title="重新生成"
+        dropUp={dropUp}
       />
     </div>
   );

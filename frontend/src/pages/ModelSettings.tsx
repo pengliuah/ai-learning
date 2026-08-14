@@ -107,12 +107,15 @@ export function ModelSettings() {
           最大输出 Token
           <div className="mt-1 flex items-center gap-2">
             <input
-              type="number"
-              min={256}
-              max={131072}
-              step={1024}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={maxTokens}
-              onChange={(e) => setMaxTokens(Math.max(256, parseInt(e.target.value) || 8192))}
+              onChange={(e) => {
+                const v = e.target.value.replace(/\D/g, "");
+                setMaxTokens(v ? parseInt(v) : 0);
+              }}
+              placeholder="8192"
               className="w-32 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
             />
             <span className="text-xs text-gray-400 dark:text-gray-500">

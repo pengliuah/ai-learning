@@ -211,6 +211,7 @@ def init_schema() -> None:
                                api_key     TEXT NOT NULL DEFAULT '',
                                model       TEXT NOT NULL DEFAULT '',
                                base_url    TEXT NOT NULL DEFAULT '',
+                               max_tokens  INTEGER NOT NULL DEFAULT 8192,
                                updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
                            )"""
                     )
@@ -220,6 +221,11 @@ def init_schema() -> None:
                            FOR EACH ROW EXECUTE FUNCTION set_updated_at()"""
                     )
                     logger.info("init_schema: model_settings table added")
+
+                conn.execute(
+                    """ALTER TABLE model_settings
+                       ADD COLUMN IF NOT EXISTS max_tokens INTEGER NOT NULL DEFAULT 8192"""
+                )
         _schema_ok = True
     except Exception:
         _schema_ok = False

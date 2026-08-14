@@ -178,6 +178,7 @@ class ModelSettings(BaseModel):
     apiKey: str = ""
     model: str = ""
     baseUrl: str = ""
+    maxTokens: int = 8192
 
 
 class ModelSettingsUpdate(BaseModel):
@@ -186,6 +187,7 @@ class ModelSettingsUpdate(BaseModel):
     apiKey: str | None = None
     model: str | None = None
     baseUrl: str | None = None
+    maxTokens: int | None = Field(default=None, ge=1)
 
 
 class ModelTestResult(BaseModel):

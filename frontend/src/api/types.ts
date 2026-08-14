@@ -123,12 +123,14 @@ export interface ModelSettings {
   apiKey: string;
   model: string;
   baseUrl: string;
+  maxTokens: number;
 }
 
 export interface ModelSettingsUpdate {
   apiKey?: string | null;
   model?: string | null;
   baseUrl?: string | null;
+  maxTokens?: number | null;
 }
 
 export type SaveToImaContentType = "plan" | "content" | "quiz" | "result";

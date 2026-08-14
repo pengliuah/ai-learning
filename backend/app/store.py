@@ -536,6 +536,7 @@ def update_model_settings(
     api_key: str | None = None,
     model: str | None = None,
     base_url: str | None = None,
+    max_tokens: int | None = None,
 ) -> dict:
     """Update model settings fields (only non-None are set, values stripped)."""
     sets: list[str] = []
@@ -549,6 +550,9 @@ def update_model_settings(
     if base_url is not None:
         sets.append("base_url = %s")
         params.append(base_url.strip())
+    if max_tokens is not None:
+        sets.append("max_tokens = %s")
+        params.append(max_tokens)
     with db_conn() as conn:
         conn.execute(
             "INSERT INTO model_settings (id) VALUES (1) ON CONFLICT DO NOTHING"
@@ -563,8 +567,8 @@ def update_model_settings(
     return dict(row)
 
 
-def get_llm_config() -> tuple[str, str, str]:
-    """Effective LLM connection config ``(api_key, model, base_url)``.
+def get_llm_config() -> tuple[str, str, str, int]:
+    """Effective LLM connection config ``(api_key, model, base_url, max_tokens)``.
 
     Non-empty values saved in the DB (web UI) win; empty fields fall back
     to the ARK_* environment variables / built-in defaults.
@@ -573,7 +577,8 @@ def get_llm_config() -> tuple[str, str, str]:
     api_key = row["api_key"] or settings.ark_api_key or ""
     model = row["model"] or settings.ark_model
     base_url = row["base_url"] or settings.ark_base_url
-    return api_key, model, base_url
+    max_tokens = row.get("max_tokens") or settings.ark_max_tokens
+    return api_key, model, base_url, max_tokens
 
 
 def is_llm_configured() -> bool:

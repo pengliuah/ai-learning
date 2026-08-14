@@ -12,13 +12,14 @@ def build_chat_model(**kwargs) -> ChatOpenAI:
     the web UI), with ARK_* environment variables as fallback for empty
     fields. Extra ``kwargs`` override the effective config.
     """
-    api_key, model, base_url = store.get_llm_config()
+    api_key, model, base_url, max_tokens = store.get_llm_config()
     if not api_key:
         raise RuntimeError("model API key is not configured")
     params = {
         "model": model,
         "api_key": api_key,
         "base_url": base_url,
+        "max_tokens": max_tokens,
         "streaming": False,
     }
     params.update(kwargs)

@@ -15,6 +15,7 @@ DATA_DIR = BACKEND_DIR / "data"
 
 ARK_BASE_URL_DEFAULT = "https://ark.cn-beijing.volces.com/api/v3"
 ARK_MODEL_DEFAULT = "doubao-1.5-pro-32k"
+ARK_MAX_TOKENS_DEFAULT = 8192
 DATABASE_URL_DEFAULT = ""  # e.g. postgresql://user:pass@host:5432/zhixue
 
 # Unified log format, e.g.:
@@ -47,6 +48,7 @@ class Settings(BaseSettings):
     ark_api_key: str | None = None
     ark_base_url: str = ARK_BASE_URL_DEFAULT
     ark_model: str = ARK_MODEL_DEFAULT
+    ark_max_tokens: int = ARK_MAX_TOKENS_DEFAULT
     log_level: str = "INFO"
     database_url: str = DATABASE_URL_DEFAULT
 

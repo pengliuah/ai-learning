@@ -202,6 +202,7 @@ CREATE TABLE model_settings (
     api_key     TEXT NOT NULL DEFAULT '',
     model       TEXT NOT NULL DEFAULT '',
     base_url    TEXT NOT NULL DEFAULT '',
+    max_tokens  INTEGER NOT NULL DEFAULT 8192,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE TRIGGER model_settings_set_updated_at

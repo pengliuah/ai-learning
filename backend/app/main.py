@@ -94,7 +94,7 @@ def health():
           默认 ``doubao-1.5-pro-32k``，可填推理端点 ID 如 ``ep-xxx``）。
     """
     try:
-        _, model, _ = store.get_llm_config()
+        _, model, _, _ = store.get_llm_config()
     except Exception:
         model = settings.ark_model
     return {"configured": is_configured(), "model": model}
@@ -552,8 +552,10 @@ def put_regen_settings(req: GenSettingsUpdate):
 @app.get("/api/settings/model")
 def get_model_settings():
     """读取当前生效的模型设置（网页配置优先，环境变量回退）。"""
-    api_key, model, base_url = store.get_llm_config()
-    return ModelSettings(apiKey=api_key, model=model, baseUrl=base_url)
+    api_key, model, base_url, max_tokens = store.get_llm_config()
+    return ModelSettings(
+        apiKey=api_key, model=model, baseUrl=base_url, maxTokens=max_tokens
+    )
 
 
 @app.put("/api/settings/model")
@@ -563,6 +565,7 @@ def put_model_settings(req: ModelSettingsUpdate):
         api_key=req.apiKey,
         model=req.model,
         base_url=req.baseUrl,
+        max_tokens=req.maxTokens,
     )
     reset = getattr(coach, "reset_model_runtime", None)
     if reset:
@@ -573,6 +576,7 @@ def put_model_settings(req: ModelSettingsUpdate):
         apiKey=row["api_key"] or settings.ark_api_key or "",
         model=row["model"] or settings.ark_model,
         baseUrl=row["base_url"] or settings.ark_base_url,
+        maxTokens=row["max_tokens"] or settings.ark_max_tokens,
     )
 
 

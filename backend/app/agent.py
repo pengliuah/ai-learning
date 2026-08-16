@@ -27,13 +27,14 @@ from typing import AsyncIterator
 
 from deepagents import create_deep_agent
 from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 
-from . import ima, store
+from . import ima, memory, store
 from .config import BACKEND_DIR
 from .llm import build_chat_model, build_streaming_model
 from .schemas import (
+    ChatTurn,
     Content,
     GradingResult,
     Module,
@@ -123,6 +124,7 @@ COACH_SYSTEM = (
     "调用工具后，根据返回结果用自然语言向用户说明。"
     "输出语言与用户输入语言保持一致。"
 )
+
 
 class LearningCoach:
     """Supervisor + four structured-output sub-agents over Volcengine Ark."""
@@ -463,13 +465,41 @@ class LearningCoach:
             )
         return self._chat_agent
 
-    async def coach_stream(self, goal: str) -> AsyncIterator[tuple[str, object]]:
+    async def _build_coach_messages(
+        self, goal: str, history: list[ChatTurn] | None
+    ) -> list:
+        """Assemble one coach turn's messages: trimmed/compressed prior turns
+        (temporary memory) followed by the new user goal."""
+        turns = history or []
+
+        # 剪裁: single trim pass -- the recent verbatim window plus the older
+        # turns that must be compressed into a summary.
+        kept, dropped = memory.trim_history(turns)
+
+        # 压缩: condense the dropped prefix into a short LLM summary so their
+        # gist survives; fall back to a one-line note on failure.
+        summary: str | None = None
+        if memory.ENABLE_SUMMARIZATION and dropped:
+            try:
+                summary = await memory.summarize_turns(build_chat_model(), dropped)
+                logger.info("coach_stream: summarized %d dropped turns", len(dropped))
+            except Exception as exc:
+                logger.warning("coach_stream: summary failed, using note: %s", exc)
+                summary = None
+
+        messages = memory.build_messages_from(kept, dropped, summary)
+        messages.append(HumanMessage(content=goal))
+        return messages
+
+
+    async def coach_stream(self, goal: str, history: list[ChatTurn] | None = None) -> AsyncIterator[tuple[str, object]]:
         """Run the chat agent: a normal conversation that calls create_plan /
         search_plans only when the LLM detects a clear intent."""
         agent = self._build_chat_agent()
-        logger.info("coach_stream: goal=%s", goal[:100])
+        messages = await self._build_coach_messages(goal, history)
+        logger.info("coach_stream: goal=%s history=%d", goal[:100], len(history or []))
         async for event in agent.astream_events(
-            {"messages": [HumanMessage(content=goal)]}, version="v2"
+            {"messages": messages}, version="v2"
         ):
             kind = event.get("event")
             if kind == "on_chat_model_stream":

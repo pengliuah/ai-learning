@@ -1,4 +1,4 @@
-import type { Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, SaveToImaRequest, SaveToImaResponse } from "./types";
+import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, SaveToImaRequest, SaveToImaResponse } from "./types";
 
 /**
  * 后端 API 基址。
@@ -150,13 +150,14 @@ export const api = {
 
     streamCoach: async (
     goal: string,
+    history: ChatTurn[],
     onDelta: (text: string) => void,
     onTool: (data: { phase: string; name: string; output?: string }) => void,
   ): Promise<void> => {
     const res = await fetch(`${API_BASE}/coach/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ goal }),
+      body: JSON.stringify({ goal, history }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 

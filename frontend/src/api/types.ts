@@ -147,3 +147,8 @@ export interface SaveToImaResponse {
   title: string;
   detail: string;
 }
+
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}

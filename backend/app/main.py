@@ -494,7 +494,7 @@ async def coach_stream(req: CoachRequest):
 
     async def event_stream():
         try:
-            async for kind, payload in coach.coach_stream(req.goal):
+            async for kind, payload in coach.coach_stream(req.goal, req.history):
                 yield _sse(kind, payload)
             yield _sse("done", {"ok": True})
         except Exception as exc:

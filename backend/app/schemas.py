@@ -139,10 +139,18 @@ class AnswersState(BaseModel):
     total: int = 0
 
 
+class ChatTurn(BaseModel):
+    """One prior chat turn sent by the client as conversation memory."""
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class CoachRequest(BaseModel):
     goal: str
-
-
+    # Temporary conversation memory: prior turns of the current chat, newest
+    # last. The backend trims/compresses this before injecting it as context.
+    history: list[ChatTurn] = Field(default_factory=list)
 # ---------------------------------------------------------------------------
 # App settings (IMA credentials + skill prompt, regeneration strategy)
 # ---------------------------------------------------------------------------

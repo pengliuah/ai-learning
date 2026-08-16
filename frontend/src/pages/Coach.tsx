@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Send, Loader2, AlertCircle, ArrowRight, ClipboardList, Search, Trash2 } from "lucide-react";
 import { Markdown } from "../components/Markdown";
 import { api } from "../api/client";
-import type { PlanListItem } from "../api/types";
+import type { ChatTurn, PlanListItem } from "../api/types";
 
 const TOOL_LABELS: Record<string, string> = {
   create_plan: "制定计划",
@@ -150,9 +150,14 @@ export function Coach() {
       { id: assistantId, role: "assistant", content: "", tools: [] },
     ]);
 
+    const history: ChatTurn[] = messages
+      .filter((m) => m.content && !m.error)
+      .map((m) => ({ role: m.role, content: m.content }));
+
     try {
       await api.streamCoach(
         goal,
+        history,
         (delta) => {
           setMessages((prev) =>
             prev.map((m) =>

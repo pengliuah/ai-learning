@@ -37,6 +37,7 @@ function spawnStar(w: number, h: number): Star {
 
 /**
  * 探索星空：全屏闪烁星空 + 偶尔划过的流星（纯 canvas，无依赖）。
+ * 页面任意点击会从点击处划出一颗流星（点哪划哪）。
  * 用法：<Starfield className="absolute inset-0 h-full w-full" />
  */
 export function Starfield({ className }: { className?: string }) {
@@ -66,9 +67,23 @@ export function Starfield({ className }: { className?: string }) {
       stars = Array.from({ length: count }, () => spawnStar(w, h));
     };
 
-    const spawnMeteor = () => {
-      const fromLeft = Math.random() < 0.5;
+    /** 随机生成一颗环境流星；传入坐标则从该点出发（点击交互）。 */
+    const spawnMeteor = (x?: number, y?: number) => {
       const speed = 420 + Math.random() * 260;
+      if (x !== undefined && y !== undefined) {
+        // 点击流星：从点击点向斜下方划过，方向随机左右，更快更亮
+        const fromLeft = Math.random() < 0.5;
+        const angle = (fromLeft ? 0.3 : Math.PI - 0.3) + (Math.random() - 0.5) * 0.25;
+        meteors.push({
+          x, y,
+          vx: Math.cos(angle) * (speed + 200),
+          vy: Math.abs(Math.sin(angle)) * (speed + 200),
+          life: 0,
+          maxLife: 1 + Math.random() * 0.4,
+        });
+        return;
+      }
+      const fromLeft = Math.random() < 0.5;
       const angle = (fromLeft ? 0.35 : Math.PI - 0.35) + (Math.random() - 0.5) * 0.2;
       meteors.push({
         x: fromLeft ? -20 : w + 20,
@@ -78,6 +93,10 @@ export function Starfield({ className }: { className?: string }) {
         life: 0,
         maxLife: 0.9 + Math.random() * 0.7,
       });
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      spawnMeteor(e.clientX, e.clientY);
     };
 
     let last = performance.now();
@@ -102,7 +121,7 @@ export function Starfield({ className }: { className?: string }) {
         ctx.fill();
       }
 
-      // 流星：低概率生成，最多同时两颗
+      // 流星：环境流星低概率生成（最多两颗）；点击流星不受限
       if (Math.random() < dt * 0.22 && meteors.length < 2) spawnMeteor();
       meteors = meteors.filter((m) => m.life < m.maxLife && m.x > -80 && m.x < w + 80 && m.y < h + 80);
       for (const m of meteors) {
@@ -133,10 +152,12 @@ export function Starfield({ className }: { className?: string }) {
 
     resize();
     window.addEventListener("resize", resize);
+    window.addEventListener("pointerdown", onPointerDown);
     raf = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
+      window.removeEventListener("pointerdown", onPointerDown);
     };
   }, []);
 

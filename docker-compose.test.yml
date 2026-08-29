@@ -36,6 +36,10 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    # 测试环境: 对外暴露 5432, 供本地开发/调试直连测试库
+    # (线上环境 docker-compose.prod.yml 不暴露, 数据库只在 docker 内网)
+    ports:
+      - "${POSTGRES_EXPOSE_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: zhixue
       POSTGRES_USER: postgres

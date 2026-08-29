@@ -105,7 +105,7 @@ export function Login() {
               disabled={!username.trim() || !password || submitting}
               className="w-full rounded-md bg-indigo-500 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-indigo-900/40 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {submitting ? "登录中..." : "进入星空"}
+              {submitting ? "登录中..." : "登录"}
             </button>
           </div>
 

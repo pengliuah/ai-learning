@@ -48,14 +48,14 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 
 
-def _gen_strategy_suffix(gen_type: str) -> str:
-    """Read the generation-strategy prompt for ``gen_type`` (plan/content/quiz).
+def _gen_strategy_suffix(gen_type: str, user_id: str) -> str:
+    """Read the user's generation-strategy prompt for ``gen_type``.
 
     Returns ``""`` when the DB is unreachable or no strategy is set, so
     generation still works without configured settings.
     """
     try:
-        row = store.get_gen_settings_row()
+        row = store.get_gen_settings_row(user_id)
         s = (row.get(gen_type) or "").strip()
         return f"\n\n生成策略要求：\n{s}" if s else ""
     except Exception:
@@ -130,37 +130,38 @@ class LearningCoach:
     """Supervisor + four structured-output sub-agents over Volcengine Ark."""
 
     def __init__(self) -> None:
-        self._graphs: dict | None = None
-        self._chat_agent = None
+        # Sub-agent / chat-agent caches are keyed by user id: each user's
+        # model settings (API key, model, ...) build their own agents.
+        self._graphs: dict[str, dict] = {}
+        self._chat_agents: dict[str, object] = {}
 
     def reset_model_runtime(self) -> None:
-        """Drop cached agents so the next call rebuilds with new model config."""
-        self._graphs = None
-        self._chat_agent = None
+        """Drop all cached agents so the next call rebuilds with new settings."""
+        self._graphs = {}
+        self._chat_agents = {}
 
-    @staticmethod
-    def _make_subagent(response_format, system_prompt):
+    def _make_subagent(self, response_format, system_prompt, user_id: str):
         return create_deep_agent(
-            model=build_chat_model(),
+            model=build_chat_model(user_id),
             tools=[],
             response_format=response_format,
             system_prompt=system_prompt,
         )
 
-    def _build(self) -> dict:
+    def _build(self, user_id: str) -> dict:
         # Cache only the stateless sub-agents (StateBackend, no checkpointer ->
         # fresh state every invoke, no cross-invocation leakage).
-        if self._graphs is None:
-            self._graphs = {
-                "planner": self._make_subagent(Plan, PLANNER_SYSTEM),
-                "content": self._make_subagent(None, CONTENT_SYSTEM),
-                "quizzer": self._make_subagent(Quiz, QUIZ_SYSTEM),
-                "grader": self._make_subagent(GradingResult, GRADER_SYSTEM),
+        if user_id not in self._graphs:
+            self._graphs[user_id] = {
+                "planner": self._make_subagent(Plan, PLANNER_SYSTEM, user_id),
+                "content": self._make_subagent(None, CONTENT_SYSTEM, user_id),
+                "quizzer": self._make_subagent(Quiz, QUIZ_SYSTEM, user_id),
+                "grader": self._make_subagent(GradingResult, GRADER_SYSTEM, user_id),
             }
-        return self._graphs
+        return self._graphs[user_id]
 
-    def _invoke_structured(self, key: str, user_text: str):
-        graph = self._build()[key]
+    def _invoke_structured(self, key: str, user_text: str, user_id: str):
+        graph = self._build(user_id)[key]
         messages = {"messages": [HumanMessage(content=user_text)]}
         logger.info("llm_invoke: agent=%s input_len=%d", key, len(user_text))
         try:
@@ -176,11 +177,11 @@ class LearningCoach:
         logger.info("llm_invoke: agent=%s ok type=%s", key, type(structured).__name__)
         return structured
 
-    def make_plan(self, source: PlanSource) -> Plan:
+    def make_plan(self, source: PlanSource, user_id: str) -> Plan:
         mode_desc = "主题" if source.mode == "topic" else "学习资料"
-        user = f"输入模式：{mode_desc}\n\n内容：\n{source.input}" + _gen_strategy_suffix("plan")
+        user = f"输入模式：{mode_desc}\n\n内容：\n{source.input}" + _gen_strategy_suffix("plan", user_id)
         logger.info("make_plan: mode=%s input=%s", source.mode, source.input[:100])
-        plan = self._invoke_structured("planner", user)
+        plan = self._invoke_structured("planner", user, user_id)
         for idx, module in enumerate(plan.modules, start=1):
             if not module.id:
                 module.id = f"m{idx}"
@@ -194,9 +195,9 @@ class LearningCoach:
         logger.info("make_plan: ok title=%s modules=%d totalMinutes=%d", plan.title, len(plan.modules), plan.totalMinutes)
         return plan
 
-    async def author_content_stream(self, plan: Plan, module: Module) -> AsyncIterator[tuple[str, object]]:
-        streaming = build_streaming_model()
-        user = self._content_user(plan, module)
+    async def author_content_stream(self, plan: Plan, module: Module, user_id: str) -> AsyncIterator[tuple[str, object]]:
+        streaming = build_streaming_model(user_id)
+        user = self._content_user(plan, module, user_id)
         parts: list[str] = []
         async for chunk in streaming.astream([SystemMessage(content=CONTENT_SYSTEM), HumanMessage(content=user)]):
             text = chunk.content
@@ -209,31 +210,31 @@ class LearningCoach:
         yield ("done", Content(markdown=markdown, keyTakeaways=key_takeaways))
 
     @staticmethod
-    def _content_user(plan: Plan, module: Module) -> str:
+    def _content_user(plan: Plan, module: Module, user_id: str) -> str:
         objectives = "；".join(module.objectives) if module.objectives else "（无）"
         return (
             f"计划：{plan.title}\n目标：{plan.goal}\n等级：{plan.level.value}\n\n"
             f"模块：{module.title}\n摘要：{module.summary}\n"
             f"学习目标：{objectives}\n难度：{module.difficulty.value}\n"
             f"预计时长：{module.minutes} 分钟\n\n请撰写该模块的 Markdown 学习内容。"
-            + _gen_strategy_suffix("content")
+            + _gen_strategy_suffix("content", user_id)
         )
 
-    def make_quiz(self, plan: Plan, module: Module) -> Quiz:
+    def make_quiz(self, plan: Plan, module: Module, user_id: str) -> Quiz:
         content_md = module.content.markdown if module.content else "（尚未生成内容，请基于模块摘要出题）"
         user = (
             f"计划：{plan.title}\n模块：{module.title}\n摘要：{module.summary}\n"
             f"学习目标：{'; '.join(module.objectives)}\n\n学习内容：\n{content_md}"
-            + _gen_strategy_suffix("quiz")
+            + _gen_strategy_suffix("quiz", user_id)
         )
-        quiz = self._invoke_structured("quizzer", user)
+        quiz = self._invoke_structured("quizzer", user, user_id)
         for idx, q in enumerate(quiz.questions, start=1):
             if not q.id:
                 q.id = f"q{idx}"
         logger.info("make_quiz: module=%s questions=%d", module.id, len(quiz.questions))
         return quiz
 
-    def grade_quiz(self, plan: Plan, module: Module, answers: dict[str, str]) -> GradingResult:
+    def grade_quiz(self, plan: Plan, module: Module, answers: dict[str, str], user_id: str) -> GradingResult:
         """Grade the quiz from saved draft answers.
 
         ``answers`` maps questionId -> student answer text. After grading we
@@ -256,7 +257,7 @@ class LearningCoach:
             + "\n\n".join(lines)
             + "\n\n请逐题评分并给出整体评估。"
         )
-        result = self._invoke_structured("grader", user)
+        result = self._invoke_structured("grader", user, user_id)
         if not result.maxScore:
             result.maxScore = float(len(quiz.questions))
         # 保留原始作答：批改结果里能回看学生当时答了什么
@@ -271,6 +272,7 @@ class LearningCoach:
         module: Module | None = None,
         content_type: str | None = None,
         skill_prompt_override: str | None = None,
+        user_id: str = "",
     ) -> SaveToImaResponse:
         """Save plan/module content as an IMA note.
 
@@ -282,7 +284,7 @@ class LearningCoach:
 
         Defaults to ``"plan"`` when no module, ``"content"`` when a module is given.
         """
-        row = store.get_ima_settings_row()
+        row = store.get_ima_settings_row(user_id)
         client_id = row["ima_client_id"]
         api_key = row["ima_api_key"]
         skill_prompt = (skill_prompt_override or row.get("ima_skill_prompt") or "").strip()
@@ -297,9 +299,9 @@ class LearningCoach:
         title, body = self._gather_for_ima(plan, module, ct)
 
         # If skill prompt is set and an LLM key is configured, use LLM to format
-        if skill_prompt and store.is_llm_configured():
+        if skill_prompt and store.is_llm_configured_for_user(user_id):
             try:
-                body = self._format_for_ima(body, skill_prompt)
+                body = self._format_for_ima(body, skill_prompt, user_id)
             except Exception as exc:
                 logger.warning("save_to_ima: LLM formatting failed, using raw: %s", exc)
 
@@ -416,7 +418,7 @@ class LearningCoach:
         body = module.content.markdown if module.content else (module.summary or module.title)
         return title, body
 
-    def _format_for_ima(self, content: str, skill_prompt: str) -> str:
+    def _format_for_ima(self, content: str, skill_prompt: str, user_id: str) -> str:
         """Use the LLM to reformat content per the IMA skill prompt."""
         system = (
             "你是一名笔记整理助手。根据用户的保存策略要求，"
@@ -424,18 +426,18 @@ class LearningCoach:
             "保持核心内容完整，不要编造信息。直接输出 Markdown，不要添加额外说明。"
         )
         user = f"保存策略要求：\n{skill_prompt}\n\n待整理的学习内容：\n{content}"
-        model = build_chat_model()
+        model = build_chat_model(user_id)
         result = model.invoke([SystemMessage(content=system), HumanMessage(content=user)])
         text = result.content
         return text if isinstance(text, str) else str(text)
 
-    def _build_chat_agent(self):
+    def _build_chat_agent(self, user_id: str):
         # Lean LangChain agent: only create_plan / search_plans.
         # No filesystem / todos / execute / task tools (unlike create_deep_agent),
         # so normal chat won't trigger tool calls. The LLM calls a tool only when
-        # it detects a clear intent. Cached (no checkpointer -> fresh state every
-        # invoke).
-        if self._chat_agent is None:
+        # it detects a clear intent. Cached per user (no checkpointer -> fresh
+        # state every invoke).
+        if user_id not in self._chat_agents:
             @tool
             def create_plan(topic: str) -> str:
                 """当用户明确想要制定/生成一份学习计划时调用，传入学习主题。调用后前端会跳转到新建计划页面并预填该主题，你无需自行生成计划内容。
@@ -452,21 +454,21 @@ class LearningCoach:
                 Args:
                     query: 搜索关键词（学习主题）；为空字符串时列出全部已有计划。
                 """
-                items = store.list_items(query.strip() or None)
+                items = store.list_items(user_id, query.strip() or None)
                 return json.dumps(
                     [{"id": i.id, "title": i.title, "progress": i.progress} for i in items],
                     ensure_ascii=False,
                 )
 
-            self._chat_agent = create_agent(
-                model=build_streaming_model(),
+            self._chat_agents[user_id] = create_agent(
+                model=build_streaming_model(user_id),
                 tools=[create_plan, search_plans],
                 system_prompt=COACH_SYSTEM,
             )
-        return self._chat_agent
+        return self._chat_agents[user_id]
 
     async def _build_coach_messages(
-        self, goal: str, history: list[ChatTurn] | None
+        self, goal: str, history: list[ChatTurn] | None, user_id: str
     ) -> list:
         """Assemble one coach turn's messages: trimmed/compressed prior turns
         (temporary memory) followed by the new user goal."""
@@ -481,7 +483,7 @@ class LearningCoach:
         summary: str | None = None
         if memory.ENABLE_SUMMARIZATION and dropped:
             try:
-                summary = await memory.summarize_turns(build_chat_model(), dropped)
+                summary = await memory.summarize_turns(build_chat_model(user_id), dropped)
                 logger.info("coach_stream: summarized %d dropped turns", len(dropped))
             except Exception as exc:
                 logger.warning("coach_stream: summary failed, using note: %s", exc)
@@ -492,11 +494,11 @@ class LearningCoach:
         return messages
 
 
-    async def coach_stream(self, goal: str, history: list[ChatTurn] | None = None) -> AsyncIterator[tuple[str, object]]:
+    async def coach_stream(self, goal: str, history: list[ChatTurn] | None = None, user_id: str = "") -> AsyncIterator[tuple[str, object]]:
         """Run the chat agent: a normal conversation that calls create_plan /
         search_plans only when the LLM detects a clear intent."""
-        agent = self._build_chat_agent()
-        messages = await self._build_coach_messages(goal, history)
+        agent = self._build_chat_agent(user_id)
+        messages = await self._build_coach_messages(goal, history, user_id)
         logger.info("coach_stream: goal=%s history=%d", goal[:100], len(history or []))
         async for event in agent.astream_events(
             {"messages": messages}, version="v2"

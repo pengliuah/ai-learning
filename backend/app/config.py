@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import sys
 from contextvars import ContextVar
 from pathlib import Path
@@ -52,8 +53,28 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     database_url: str = DATABASE_URL_DEFAULT
 
+    # Auth: JWT secret for access tokens. When unset, a random secret is
+    # generated at startup -- restarts then invalidate all access tokens
+    # (refresh tokens still work), so set JWT_SECRET for stable sessions.
+    jwt_secret: str = ""
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 14
+    # Bootstrap admin, created only when the users table is empty.
+    admin_username: str = "admin"
+    admin_password: str = "admin123"
+
 
 settings = Settings()
+
+if not settings.jwt_secret:
+    settings.jwt_secret = secrets.token_urlsafe(48)
+    logging.getLogger(__name__).warning(
+        "JWT_SECRET 未设置，已生成临时密钥：重启后所有 access token 失效（refresh token 仍可用）。"
+    )
+if settings.admin_username == "admin" and settings.admin_password == "admin123":
+    logging.getLogger(__name__).warning(
+        "使用默认管理员引导配置（admin/admin123），仅用于首次建号，请登录后立即修改密码。"
+    )
 
 
 def _make_handler() -> logging.Handler:

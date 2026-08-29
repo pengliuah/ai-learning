@@ -63,7 +63,7 @@ def coach_with(planner=None, quizzer=None, grader=None):
         "content": FakeGraph(None),
         "supervisor": FakeGraph(None),
     }
-    coach._build = lambda: graphs  # type: ignore[method-assign]
+    coach._build = lambda uid: graphs  # type: ignore[method-assign]
     return coach, graphs
 
 
@@ -81,7 +81,7 @@ def test_make_plan_normalizes_module_ids():
         ],
     )
     coach, _ = coach_with(planner=FakeGraph(raw))
-    plan = coach.make_plan(PlanSource(input="x", mode="topic"))
+    plan = coach.make_plan(PlanSource(input="x", mode="topic"), "u1")
     assert [m.id for m in plan.modules] == ["m1", "m2"]
     assert all(m.status == ModuleStatus.not_started for m in plan.modules)
     assert all(m.content is None and m.quiz is None and m.result is None and m.answers is None for m in plan.modules)
@@ -99,13 +99,13 @@ def test_make_plan_sums_total_minutes_when_zero():
         ],
     )
     coach, _ = coach_with(planner=FakeGraph(raw))
-    assert coach.make_plan(PlanSource(input="x", mode="topic")).totalMinutes == 35
+    assert coach.make_plan(PlanSource(input="x", mode="topic"), "u1").totalMinutes == 35
 
 
 def test_make_plan_keeps_nonzero_total_minutes():
     raw = make_plan(modules=2, total_minutes=60)
     coach, _ = coach_with(planner=FakeGraph(raw))
-    assert coach.make_plan(PlanSource(input="x", mode="topic")).totalMinutes == 60
+    assert coach.make_plan(PlanSource(input="x", mode="topic"), "u1").totalMinutes == 60
 
 
 # ----- make_quiz -----
@@ -119,7 +119,7 @@ def test_make_quiz_normalizes_question_ids():
     )
     coach, _ = coach_with(quizzer=FakeGraph(raw))
     plan = make_plan(modules=1)
-    quiz = coach.make_quiz(plan, plan.modules[0])
+    quiz = coach.make_quiz(plan, plan.modules[0], "u1")
     assert [q.id for q in quiz.questions] == ["q1", "q2"]
 
 
@@ -140,7 +140,7 @@ def test_grade_quiz_writes_student_answers_and_maxscore_fallback():
     )
     coach, _ = coach_with(grader=FakeGraph(raw))
     answers = {"q1": "2", "q2": "a callable wrapping a function"}
-    result = coach.grade_quiz(plan, module, answers)
+    result = coach.grade_quiz(plan, module, answers, "u1")
     assert result.maxScore == 2.0  # fell back to len(questions)
     assert result.results[0].studentAnswer == "2"
     assert result.results[1].studentAnswer == "a callable wrapping a function"
@@ -153,7 +153,7 @@ def test_invoke_structured_retries_once():
     g = FakeGraph(raw, fail_first=True)
     coach, _ = coach_with(quizzer=g)
     plan = make_plan(modules=1)
-    quiz = coach.make_quiz(plan, plan.modules[0])
+    quiz = coach.make_quiz(plan, plan.modules[0], "u1")
     assert quiz is raw
     assert g.calls == 2
 
@@ -176,14 +176,14 @@ def test_split_key_takeaways_no_heading():
 def test_author_content_stream_splits_key_takeaways(monkeypatch):
     heading = "## " + "\u5173\u952e\u8981\u70b9"
     chunks = ["# module\n\nbody\n\n", heading + "\n", "- point one\n", "- point two\n"]
-    monkeypatch.setattr(agent_mod, "build_streaming_model", lambda **kw: FakeStreamModel(chunks))
+    monkeypatch.setattr(agent_mod, "build_streaming_model", lambda *a, **kw: FakeStreamModel(chunks))
     coach, _ = coach_with()
     plan = make_plan(modules=1)
     module = plan.modules[0]
 
     async def collect():
         out = []
-        async for kind, payload in coach.author_content_stream(plan, module):
+        async for kind, payload in coach.author_content_stream(plan, module, "u1"):
             out.append((kind, payload))
         return out
 

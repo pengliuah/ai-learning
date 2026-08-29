@@ -152,3 +152,31 @@ export interface ChatTurn {
   role: "user" | "assistant";
   content: string;
 }
+
+// ---------------------------------------------------------------------------
+// Auth（账号系统）
+// ---------------------------------------------------------------------------
+
+export type UserRole = "admin" | "user";
+
+export interface User {
+  id: string;
+  username: string;
+  email: string | null;
+  role: UserRole;
+  createdAt: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: "bearer";
+  user: User;
+}
+
+export interface AdminUserCreateInput {
+  username: string;
+  password: string;
+  role?: UserRole;
+  email?: string | null;
+}

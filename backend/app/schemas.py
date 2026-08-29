@@ -227,3 +227,37 @@ class SaveToImaResponse(BaseModel):
     noteId: str | None = None
     title: str = ""
     detail: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Auth（账号系统）
+# ---------------------------------------------------------------------------
+
+class LoginRequest(BaseModel):
+    """POST /api/auth/login body."""
+    username: str
+    password: str
+
+
+class RefreshRequest(BaseModel):
+    """POST /api/auth/refresh and /api/auth/logout body."""
+    refresh_token: str
+
+
+class ChangePasswordRequest(BaseModel):
+    """POST /api/auth/change-password body."""
+    old_password: str
+    new_password: str = Field(min_length=6)
+
+
+class AdminCreateUserRequest(BaseModel):
+    """POST /api/admin/users body (admin only)."""
+    username: str = Field(min_length=2)
+    password: str = Field(min_length=6)
+    role: Literal["admin", "user"] = "user"
+    email: str | None = None
+
+
+class AdminResetPasswordRequest(BaseModel):
+    """POST /api/admin/users/{id}/reset-password body (admin only)."""
+    new_password: str = Field(min_length=6)

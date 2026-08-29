@@ -1,4 +1,4 @@
-import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, SaveToImaRequest, SaveToImaResponse } from "./types";
+import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, SaveToImaRequest, SaveToImaResponse, User, AuthResponse, AdminUserCreateInput } from "./types";
 
 /**
  * 后端 API 基址。
@@ -9,8 +9,91 @@ import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, Gra
  */
 const API_BASE = (import.meta.env.VITE_API_BASE || "/api").replace(/\/+$/, "");
 
+// ---------------------------------------------------------------------------
+// 会话存储（双 token: access JWT + refresh opaque）与 401 自动刷新
+// ---------------------------------------------------------------------------
+
+const TOKEN_KEY = "zhixue_token";
+const REFRESH_KEY = "zhixue_refresh";
+const USER_KEY = "zhixue_user";
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function getStoredUser(): User | null {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? (JSON.parse(raw) as User) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSession(access: string, refresh: string, user: User) {
+  localStorage.setItem(TOKEN_KEY, access);
+  localStorage.setItem(REFRESH_KEY, refresh);
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+export function clearSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_KEY);
+  localStorage.removeItem(USER_KEY);
+}
+
+/** 会话失效后的统一出口：清掉本地状态并回到登录页。 */
+function redirectToLogin() {
+  clearSession();
+  if (!window.location.pathname.startsWith("/login")) {
+    window.location.assign("/login");
+  }
+}
+
+// 单飞刷新：并发请求共享同一次 /auth/refresh，成功后各自重放原请求。
+let refreshPromise: Promise<boolean> | null = null;
+
+async function performRefresh(): Promise<boolean> {
+  const refresh = localStorage.getItem(REFRESH_KEY);
+  if (!refresh) return false;
+  try {
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+    if (!res.ok) return false;
+    const body = (await res.json()) as AuthResponse;
+    saveSession(body.access_token, body.refresh_token, body.user);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function tryRefresh(): Promise<boolean> {
+  refreshPromise ??= performRefresh().finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(API_BASE + url, init);
+  const res = await fetch(API_BASE + url, {
+    ...init,
+    headers: { ...authHeaders(), ...(init?.headers as Record<string, string> | undefined) },
+  });
+  if (res.status === 401) {
+    // access token 过期 -> 无感刷新后重放一次；再失败则回登录页。
+    if (await tryRefresh()) return json<T>(url, init);
+    redirectToLogin();
+    throw new Error("登录已过期，请重新登录");
+  }
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     throw new Error(detail || `HTTP ${res.status}`);
@@ -20,6 +103,61 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => json<{ configured: boolean; model: string }>("/health"),
+
+  // ----- auth -----
+
+  login: async (username: string, password: string): Promise<AuthResponse> => {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(body.detail || `HTTP ${res.status}`);
+    }
+    const auth = body as AuthResponse;
+    saveSession(auth.access_token, auth.refresh_token, auth.user);
+    return auth;
+  },
+
+  /** 登出：尽力吊销服务端 refresh token，然后清空本地会话。 */
+  logout: async () => {
+    const refresh = localStorage.getItem(REFRESH_KEY);
+    if (refresh) {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refresh }),
+      }).catch(() => {});
+    }
+    clearSession();
+  },
+
+  getMe: () => json<User>("/auth/me"),
+
+  // ----- admin（用户管理）-----
+
+  listUsers: () => json<User[]>("/admin/users"),
+
+  createUser: (data: AdminUserCreateInput) =>
+    json<User>("/admin/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  deleteUser: (id: string) =>
+    json<{ deleted: string }>(`/admin/users/${id}`, { method: "DELETE" }),
+
+  resetUserPassword: (id: string, newPassword: string) =>
+    json<{ ok: boolean }>(`/admin/users/${id}/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: newPassword }),
+    }),
+
+  // ----- plans -----
 
   listPlans: (q?: string) =>
     json<PlanListItem[]>(`/plans${q ? `?q=${encodeURIComponent(q)}` : ""}`),
@@ -71,9 +209,19 @@ export const api = {
     moduleId: string,
     onDelta: (text: string) => void,
   ): Promise<Document> => {
-    const res = await fetch(`${API_BASE}/plans/${planId}/modules/${moduleId}/content`, {
-      method: "POST",
-    });
+    const doFetch = () =>
+      fetch(`${API_BASE}/plans/${planId}/modules/${moduleId}/content`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+    let res = await doFetch();
+    if (res.status === 401) {
+      if (await tryRefresh()) res = await doFetch();
+      else {
+        redirectToLogin();
+        throw new Error("登录已过期，请重新登录");
+      }
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const reader = res.body!.getReader();
@@ -109,8 +257,6 @@ export const api = {
     return doneDoc;
   },
 
-  /** SSE stream for the coach chat. onDelta for text tokens, onTool for
-   *  create_plan / search_plans tool events. Resolves on done, throws on error. */
   getImaSettings: () =>
     json<ImaSettings>("/settings/ima"),
 
@@ -148,17 +294,28 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-    streamCoach: async (
+  /** SSE stream for the coach chat. onDelta for text tokens, onTool for
+   *  create_plan / search_plans tool events. Resolves on done, throws on error. */
+  streamCoach: async (
     goal: string,
     history: ChatTurn[],
     onDelta: (text: string) => void,
     onTool: (data: { phase: string; name: string; output?: string }) => void,
   ): Promise<void> => {
-    const res = await fetch(`${API_BASE}/coach/stream`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ goal, history }),
-    });
+    const doFetch = () =>
+      fetch(`${API_BASE}/coach/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ goal, history }),
+      });
+    let res = await doFetch();
+    if (res.status === 401) {
+      if (await tryRefresh()) res = await doFetch();
+      else {
+        redirectToLogin();
+        throw new Error("登录已过期，请重新登录");
+      }
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const reader = res.body!.getReader();

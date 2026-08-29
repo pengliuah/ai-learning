@@ -9,28 +9,44 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 
 from . import store
 from .agent import LearningCoach
+from .auth import (
+    create_access_token,
+    create_refresh_token,
+    get_current_user,
+    get_current_user_optional,
+    hash_password,
+    require_admin,
+    revoke_refresh_token,
+    rotate_refresh_token,
+    verify_password,
+)
 from .config import BACKEND_DIR, settings
 from .middleware import AccessLogMiddleware
 from .schemas import (
+    AdminCreateUserRequest,
+    AdminResetPasswordRequest,
     AnswersState,
+    ChangePasswordRequest,
     CoachRequest,
     GenSettings,
     GenSettingsUpdate,
     ImaSettings,
     ImaSettingsUpdate,
+    LoginRequest,
     ModelSettings,
     ModelSettingsUpdate,
     ModuleStatus,
     ModuleStatusPatch,
     PlanCreateRequest,
     PlanSource,
+    RefreshRequest,
     SaveAnswersRequest,
     SaveToImaRequest,
     SaveToImaResponse,
@@ -51,20 +67,36 @@ coach = LearningCoach()
 logger = logging.getLogger(__name__)
 
 
+def _user_public(user: dict) -> dict:
+    """用户公开信息（绝不包含 password_hash）。"""
+    return {
+        "id": str(user["id"]),
+        "username": user["username"],
+        "email": user.get("email"),
+        "role": user["role"],
+        "createdAt": user.get("created_at"),
+    }
+
+
 def is_configured() -> bool:
-    """Whether an LLM API key is available (DB values with env fallback)."""
+    """Deployment-level LLM readiness (env vars) for anonymous /api/health."""
     return store.is_llm_configured()
 
 
-def _require_configured() -> None:
-    """未配置模型 API Key 时抛 503，统一拦截所有需要调用 LLM 的端点。"""
-    if not is_configured():
+def is_configured_for_user(user_id: str) -> bool:
+    """Whether the user's effective LLM config has an API key."""
+    return store.is_llm_configured_for_user(user_id)
+
+
+def _require_configured(user_id: str) -> None:
+    """该用户未配置模型 API Key 时抛 503，统一拦截需要调用 LLM 的端点。"""
+    if not is_configured_for_user(user_id):
         raise HTTPException(status_code=503, detail="model API key not configured")
 
 
-def _get_doc(plan_id: str):
-    """按 id 取计划文档；不存在则抛 404。"""
-    doc = store.get_document(plan_id)
+def _get_doc(plan_id: str, user_id: str):
+    """按 id 取当前用户的计划文档；不存在（或属于他人）则抛 404。"""
+    doc = store.get_document(plan_id, user_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="plan not found")
     return doc
@@ -79,11 +111,14 @@ def _get_module(doc, module_id: str):
 
 
 @app.get("/api/health")
-def health():
+def health(user: dict | None = Depends(get_current_user_optional)):
     """健康检查。
 
     探测后端是否就绪、是否已配置模型 API Key。不调用任何 LLM，
     可直接用于存活/就绪探针（liveness/readiness probe）。
+
+    认证可选：带有效 token 时按该用户的模型设置判定 configured；
+    匿名调用（未登录/无效 token）按部署级环境变量判定。
 
     返回:
         200 ``{"configured": bool, "model": str}``
@@ -93,15 +128,155 @@ def health():
         - ``model``: 当前生效的模型名（网页模型设置优先，其次环境变量，
           默认 ``doubao-1.5-pro-32k``，可填推理端点 ID 如 ``ep-xxx``）。
     """
-    try:
-        _, model, _, _ = store.get_llm_config()
-    except Exception:
-        model = settings.ark_model
-    return {"configured": is_configured(), "model": model}
+    if user is not None:
+        try:
+            _, model, _, _ = store.get_llm_config(str(user["id"]))
+            return {"configured": store.is_llm_configured_for_user(str(user["id"])), "model": model}
+        except Exception:
+            model = settings.ark_model
+            return {"configured": False, "model": model}
+    return {"configured": is_configured(), "model": settings.ark_model}
 
+
+# ---------------------------------------------------------------------------
+# Auth（账号系统：用户名/邮箱 + 密码，双 token，管理员建号不开放注册）
+# ---------------------------------------------------------------------------
+
+@app.post("/api/auth/login")
+def auth_login(req: LoginRequest):
+    """登录，换取双 token。
+
+    请求体 ``LoginRequest``: ``{username, password}``（username 兼容邮箱字段
+    预留，当前仅按用户名匹配）。
+
+    返回:
+        200 ``{access_token, refresh_token, token_type: "bearer", user}``。
+        access_token 为 30 分钟 JWT；refresh_token 为 14 天 opaque 串
+        （服务端只存哈希），每次刷新轮换。
+
+    错误:
+        401: 用户名或密码错误。
+    """
+    user = store.get_user_by_username(req.username.strip())
+    if user is None or not verify_password(req.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    return {
+        "access_token": create_access_token(user),
+        "refresh_token": create_refresh_token(str(user["id"])),
+        "token_type": "bearer",
+        "user": _user_public(store.get_user(str(user["id"]))),
+    }
+
+
+@app.post("/api/auth/refresh")
+def auth_refresh(req: RefreshRequest):
+    """用 refresh token 换取新 token 对（轮换：旧 refresh token 立即作废）。
+
+    错误:
+        401: refresh token 无效/过期/已吊销。再次提交已吊销的 token 会
+        吊销该用户全部 refresh token（泄露处置）。
+    """
+    user, access, refresh = rotate_refresh_token(req.refresh_token)
+    return {
+        "access_token": access,
+        "refresh_token": refresh,
+        "token_type": "bearer",
+        "user": _user_public(store.get_user(str(user["id"]))),
+    }
+
+
+@app.post("/api/auth/logout")
+def auth_logout(req: RefreshRequest):
+    """登出：吊销提交的 refresh token（幂等）。"""
+    revoke_refresh_token(req.refresh_token)
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def auth_me(user: dict = Depends(get_current_user)):
+    """当前登录用户信息。"""
+    return _user_public(user)
+
+
+@app.post("/api/auth/change-password")
+def auth_change_password(req: ChangePasswordRequest, user: dict = Depends(get_current_user)):
+    """修改自己的密码；成功后吊销该用户所有其他会话的 refresh token。"""
+    if not verify_password(req.old_password, user["password_hash"]):
+        raise HTTPException(status_code=400, detail="原密码错误")
+    store.update_user_password(str(user["id"]), hash_password(req.new_password))
+    store.revoke_all_refresh_tokens(str(user["id"]))
+    logger.info("auth_change_password: user=%s", user["username"])
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Admin（管理员：用户管理）
+# ---------------------------------------------------------------------------
+
+@app.get("/api/admin/users")
+def admin_list_users(admin: dict = Depends(require_admin)):
+    """列出所有用户（仅管理员）。"""
+    return store.list_users()
+
+
+@app.post("/api/admin/users")
+def admin_create_user(req: AdminCreateUserRequest, admin: dict = Depends(require_admin)):
+    """创建用户（仅管理员，不开放自助注册）。
+
+    请求体 ``AdminCreateUserRequest``:
+        - ``username`` (str): 用户名，唯一。
+        - ``password`` (str): 初始密码。
+        - ``role`` ("admin" | "user"): 默认 ``user``。
+        - ``email`` (str, 可选)。
+
+    错误:
+        409: 用户名或邮箱已存在。
+    """
+    try:
+        created = store.create_user(
+            req.username.strip(), hash_password(req.password),
+            role=req.role, email=(req.email or None),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    logger.info("admin_create_user: by=%s new=%s role=%s", admin["username"], created["username"], created["role"])
+    return created
+
+
+@app.delete("/api/admin/users/{user_id}")
+def admin_delete_user(user_id: str, admin: dict = Depends(require_admin)):
+    """删除用户及其全部数据（计划、设置级联删除；仅管理员）。
+
+    错误:
+        400: 不能删除自己。
+        404: 用户不存在。
+    """
+    if str(admin["id"]) == user_id:
+        raise HTTPException(status_code=400, detail="不能删除当前登录的账号")
+    if not store.delete_user(user_id):
+        raise HTTPException(status_code=404, detail="user not found")
+    logger.info("admin_delete_user: by=%s deleted=%s", admin["username"], user_id)
+    return {"deleted": user_id}
+
+
+@app.post("/api/admin/users/{user_id}/reset-password")
+def admin_reset_password(user_id: str, req: AdminResetPasswordRequest, admin: dict = Depends(require_admin)):
+    """重置用户密码（仅管理员）；重置后吊销该用户全部会话。"""
+    target = store.get_user(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    store.update_user_password(user_id, hash_password(req.new_password))
+    store.revoke_all_refresh_tokens(user_id)
+    logger.info("admin_reset_password: by=%s target=%s", admin["username"], target["username"])
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Plans（全部按当前用户隔离）
+# ---------------------------------------------------------------------------
 
 @app.post("/api/plans")
-def create_plan(req: PlanCreateRequest):
+def create_plan(req: PlanCreateRequest, user: dict = Depends(get_current_user)):
     """生成并创建一份学习计划。
 
     调用 DeepAgents Planner 子代理（``create_deep_agent`` +
@@ -122,20 +297,20 @@ def create_plan(req: PlanCreateRequest):
         - 503: 未配置 ``ARK_API_KEY``。
         - 502: LLM 或结构化输出失败（已内置一次重试）。
     """
-    _require_configured()
-    logger.info("create_plan: input=%s mode=%s", req.input[:100], req.mode)
+    _require_configured(str(user["id"]))
+    logger.info("create_plan: user=%s input=%s mode=%s", user["username"], req.input[:100], req.mode)
     try:
-        plan = coach.make_plan(PlanSource(input=req.input, mode=req.mode))
+        plan = coach.make_plan(PlanSource(input=req.input, mode=req.mode), str(user["id"]))
     except Exception as exc:
         logger.error("create_plan: failed: %s", exc)
         raise HTTPException(status_code=502, detail=f"plan generation failed: {exc}")
-    doc = store.create_document(PlanSource(input=req.input, mode=req.mode), plan)
+    doc = store.create_document(PlanSource(input=req.input, mode=req.mode), plan, str(user["id"]))
     logger.info("create_plan: ok plan_id=%s title=%s modules=%d", doc.id, plan.title, len(plan.modules))
     return doc
 
 
 @app.get("/api/plans")
-def list_plans(q: str | None = None):
+def list_plans(q: str | None = None, user: dict = Depends(get_current_user)):
     """列出计划（概要视图），可按标题关键词过滤。
 
     查询参数 ``q`` (str, 可选) 按计划标题做大小写不敏感子串过滤；为空返回全部。
@@ -148,13 +323,13 @@ def list_plans(q: str | None = None):
         - ``createdAt`` (datetime)
         - ``progress`` (float, 0.0~1.0)
     """
-    items = store.list_items(q)
-    logger.info("list_plans: q=%s count=%d", (q or "-")[:50], len(items))
+    items = store.list_items(str(user["id"]), q)
+    logger.info("list_plans: user=%s q=%s count=%d", user["username"], (q or "-")[:50], len(items))
     return items
 
 
 @app.get("/api/plans/{plan_id}")
-def get_plan(plan_id: str):
+def get_plan(plan_id: str, user: dict = Depends(get_current_user)):
     """获取某份计划的完整文档。
 
     包含计划元信息与全部模块（含各模块已生成的 content / quiz / result /
@@ -169,13 +344,13 @@ def get_plan(plan_id: str):
     错误:
         404: 计划不存在。
     """
-    doc = _get_doc(plan_id)
-    logger.info("get_plan: plan_id=%s title=%s", plan_id, doc.plan.title)
+    doc = _get_doc(plan_id, str(user["id"]))
+    logger.info("get_plan: user=%s plan_id=%s title=%s", user["username"], plan_id, doc.plan.title)
     return doc
 
 
 @app.delete("/api/plans/{plan_id}")
-def delete_plan(plan_id: str):
+def delete_plan(plan_id: str, user: dict = Depends(get_current_user)):
     """删除某份计划（及其全部模块产物）。
 
     路径参数:
@@ -187,14 +362,14 @@ def delete_plan(plan_id: str):
     错误:
         404: 计划不存在。
     """
-    if not store.delete_document(plan_id):
+    if not store.delete_document(plan_id, str(user["id"])):
         raise HTTPException(status_code=404, detail="plan not found")
     logger.info("delete_plan: plan_id=%s", plan_id)
     return {"deleted": plan_id}
 
 
 @app.post("/api/plans/{plan_id}/modules/{module_id}/content")
-async def generate_content(plan_id: str, module_id: str):
+async def generate_content(plan_id: str, module_id: str, user: dict = Depends(get_current_user)):
     """生成某模块的学习内容（SSE 流式）。
 
     调用流式 ``ChatOpenAI`` 逐 token 输出模块 Markdown 学习内容，
@@ -222,15 +397,15 @@ async def generate_content(plan_id: str, module_id: str):
         - 404: 计划或模块不存在。
         - 流中 error 事件: 生成或持久化失败。
     """
-    _require_configured()
-    doc = _get_doc(plan_id)
+    _require_configured(str(user["id"]))
+    doc = _get_doc(plan_id, str(user["id"]))
     module = _get_module(doc, module_id)
-    logger.info("generate_content: plan_id=%s module_id=%s", plan_id, module_id)
+    logger.info("generate_content: user=%s plan_id=%s module_id=%s", user["username"], plan_id, module_id)
 
     async def event_stream():
         nonlocal content
         try:
-            async for kind, payload in coach.author_content_stream(doc.plan, module):
+            async for kind, payload in coach.author_content_stream(doc.plan, module, str(user["id"])):
                 if kind == "delta":
                     yield _sse("delta", {"delta": payload})
                 elif kind == "done":
@@ -241,7 +416,7 @@ async def generate_content(plan_id: str, module_id: str):
                 if m.status == ModuleStatus.not_started:
                     m.status = ModuleStatus.studying
 
-            updated = store.update_module(plan_id, module_id, mutate)
+            updated = store.update_module(plan_id, module_id, mutate, str(user["id"]))
             logger.info("generate_content: ok module_id=%s chars=%d", module_id, len(content.markdown) if content else 0)
             yield _sse("done", updated.model_dump(mode="json"))
         except Exception as exc:
@@ -252,7 +427,7 @@ async def generate_content(plan_id: str, module_id: str):
 
 
 @app.get("/api/plans/{plan_id}/modules/{module_id}/content")
-def get_content(plan_id: str, module_id: str):
+def get_content(plan_id: str, module_id: str, user: dict = Depends(get_current_user)):
     """读取某模块已生成的学习内容。
 
     路径参数:
@@ -265,14 +440,14 @@ def get_content(plan_id: str, module_id: str):
     错误:
         - 404: 计划/模块不存在，或该模块尚未生成内容。
     """
-    module = _get_module(_get_doc(plan_id), module_id)
+    module = _get_module(_get_doc(plan_id, str(user["id"])), module_id)
     if module.content is None:
         raise HTTPException(status_code=404, detail="content not generated")
     return module.content
 
 
 @app.post("/api/plans/{plan_id}/modules/{module_id}/quiz")
-def generate_quiz(plan_id: str, module_id: str):
+def generate_quiz(plan_id: str, module_id: str, user: dict = Depends(get_current_user)):
     """为某模块生成测验。
 
     调用 DeepAgents Quizzer 子代理（``response_format=Quiz``），基于模块内容
@@ -290,11 +465,11 @@ def generate_quiz(plan_id: str, module_id: str):
         - 404: 计划或模块不存在。
         - 502: LLM 或结构化输出失败（已内置一次重试）。
     """
-    _require_configured()
-    doc = _get_doc(plan_id)
+    _require_configured(str(user["id"]))
+    doc = _get_doc(plan_id, str(user["id"]))
     module = _get_module(doc, module_id)
     try:
-        quiz = coach.make_quiz(doc.plan, module)
+        quiz = coach.make_quiz(doc.plan, module, str(user["id"]))
     except Exception as exc:
         logger.error("generate_quiz: failed: %s", exc)
         raise HTTPException(status_code=502, detail=f"quiz generation failed: {exc}")
@@ -306,12 +481,12 @@ def generate_quiz(plan_id: str, module_id: str):
         m.result = None
         m.answers = None
 
-    logger.info("generate_quiz: plan_id=%s module_id=%s questions=%d", plan_id, module_id, len(quiz.questions))
-    return store.update_module(plan_id, module_id, mutate)
+    logger.info("generate_quiz: user=%s plan_id=%s module_id=%s questions=%d", user["username"], plan_id, module_id, len(quiz.questions))
+    return store.update_module(plan_id, module_id, mutate, str(user["id"]))
 
 
 @app.get("/api/plans/{plan_id}/modules/{module_id}/quiz")
-def get_quiz(plan_id: str, module_id: str):
+def get_quiz(plan_id: str, module_id: str, user: dict = Depends(get_current_user)):
     """读取某模块已生成的测验。
 
     路径参数:
@@ -324,14 +499,14 @@ def get_quiz(plan_id: str, module_id: str):
     错误:
         - 404: 计划/模块不存在，或该模块尚未生成测验。
     """
-    module = _get_module(_get_doc(plan_id), module_id)
+    module = _get_module(_get_doc(plan_id, str(user["id"])), module_id)
     if module.quiz is None:
         raise HTTPException(status_code=404, detail="quiz not generated")
     return module.quiz
 
 
 @app.put("/api/plans/{plan_id}/modules/{module_id}/answers")
-def save_answers(plan_id: str, module_id: str, req: SaveAnswersRequest):
+def save_answers(plan_id: str, module_id: str, req: SaveAnswersRequest, user: dict = Depends(get_current_user)):
     """保存（合并）测验作答草稿。
 
     前端可随答随存（自动保存单题作答）：请求体里的 answers 会合并进该模块
@@ -351,16 +526,16 @@ def save_answers(plan_id: str, module_id: str, req: SaveAnswersRequest):
     错误:
         - 404: 计划或模块不存在。
     """
-    _get_module(_get_doc(plan_id), module_id)
+    _get_module(_get_doc(plan_id, str(user["id"])), module_id)
 
     def mutate(m):
         m.answers = {**(m.answers or {}), **req.answers}
 
-    return store.update_module(plan_id, module_id, mutate)
+    return store.update_module(plan_id, module_id, mutate, str(user["id"]))
 
 
 @app.get("/api/plans/{plan_id}/modules/{module_id}/answers")
-def get_answers(plan_id: str, module_id: str):
+def get_answers(plan_id: str, module_id: str, user: dict = Depends(get_current_user)):
     """读取测验作答草稿与进度。
 
     用于恢复已答内容、展示作答进度（已答题数 / 总题数）。总题数取自该模块
@@ -376,7 +551,7 @@ def get_answers(plan_id: str, module_id: str):
     错误:
         - 404: 计划或模块不存在。
     """
-    module = _get_module(_get_doc(plan_id), module_id)
+    module = _get_module(_get_doc(plan_id, str(user["id"])), module_id)
     answers = module.answers or {}
     total = len(module.quiz.questions) if module.quiz else 0
     answered = sum(1 for v in answers.values() if v and v.strip())
@@ -384,7 +559,7 @@ def get_answers(plan_id: str, module_id: str):
 
 
 @app.post("/api/plans/{plan_id}/modules/{module_id}/grade")
-def grade_quiz(plan_id: str, module_id: str):
+def grade_quiz(plan_id: str, module_id: str, user: dict = Depends(get_current_user)):
     """批改某模块测验并给出评估（从已保存草稿批改）。
 
     调用 DeepAgents Grader 子代理（``response_format=GradingResult``），
@@ -408,8 +583,8 @@ def grade_quiz(plan_id: str, module_id: str):
         - 400: 没有已保存作答（需先 ``PUT .../answers``）。
         - 502: LLM 或结构化输出失败（已内置一次重试）。
     """
-    _require_configured()
-    doc = _get_doc(plan_id)
+    _require_configured(str(user["id"]))
+    doc = _get_doc(plan_id, str(user["id"]))
     module = _get_module(doc, module_id)
     if module.quiz is None:
         raise HTTPException(status_code=404, detail="quiz not generated")
@@ -417,7 +592,7 @@ def grade_quiz(plan_id: str, module_id: str):
     if not answers:
         raise HTTPException(status_code=400, detail="no saved answers to grade; PUT .../answers first")
     try:
-        result = coach.grade_quiz(doc.plan, module, answers)
+        result = coach.grade_quiz(doc.plan, module, answers, str(user["id"]))
     except Exception as exc:
         logger.error("grade_quiz: failed: %s", exc)
         raise HTTPException(status_code=502, detail=f"grading failed: {exc}")
@@ -426,12 +601,12 @@ def grade_quiz(plan_id: str, module_id: str):
         m.result = result
         m.status = ModuleStatus.completed
 
-    logger.info("grade_quiz: plan_id=%s module_id=%s score=%.1f/%.1f", plan_id, module_id, result.totalScore, result.maxScore)
-    return store.update_module(plan_id, module_id, mutate)
+    logger.info("grade_quiz: user=%s plan_id=%s module_id=%s score=%.1f/%.1f", user["username"], plan_id, module_id, result.totalScore, result.maxScore)
+    return store.update_module(plan_id, module_id, mutate, str(user["id"]))
 
 
 @app.patch("/api/plans/{plan_id}/modules/{module_id}")
-def patch_module_status(plan_id: str, module_id: str, patch: ModuleStatusPatch):
+def patch_module_status(plan_id: str, module_id: str, patch: ModuleStatusPatch, user: dict = Depends(get_current_user)):
     """更新某模块状态。
 
     用于前端手动标记模块进度（如标记跳过/重做）。
@@ -450,16 +625,16 @@ def patch_module_status(plan_id: str, module_id: str, patch: ModuleStatusPatch):
     错误:
         - 404: 计划或模块不存在。
     """
-    _get_module(_get_doc(plan_id), module_id)
+    _get_module(_get_doc(plan_id, str(user["id"])), module_id)
 
     def mutate(m):
         m.status = patch.status
 
-    return store.update_module(plan_id, module_id, mutate)
+    return store.update_module(plan_id, module_id, mutate, str(user["id"]))
 
 
 @app.post("/api/coach/stream")
-async def coach_stream(req: CoachRequest):
+async def coach_stream(req: CoachRequest, user: dict = Depends(get_current_user)):
     """智能体全流程辅导（SSE 流式）。
 
     运行 DeepAgents 学习教练（supervisor，``create_deep_agent`` +
@@ -489,12 +664,12 @@ async def coach_stream(req: CoachRequest):
         - 503: 未配置 ``ARK_API_KEY``。
         - 流中 error 事件: 运行失败。
     """
-    _require_configured()
-    logger.info("coach_stream: goal=%s", req.goal[:100])
+    _require_configured(str(user["id"]))
+    logger.info("coach_stream: user=%s goal=%s", user["username"], req.goal[:100])
 
     async def event_stream():
         try:
-            async for kind, payload in coach.coach_stream(req.goal, req.history):
+            async for kind, payload in coach.coach_stream(req.goal, req.history, str(user["id"])):
                 yield _sse(kind, payload)
             yield _sse("done", {"ok": True})
         except Exception as exc:
@@ -504,9 +679,9 @@ async def coach_stream(req: CoachRequest):
 
 
 @app.get("/api/settings/ima")
-def get_ima_settings():
-    """读取 IMA 设置（凭证 + skill prompt）。"""
-    row = store.get_ima_settings_row()
+def get_ima_settings(user: dict = Depends(get_current_user)):
+    """读取当前用户的 IMA 设置（凭证 + skill prompt）。"""
+    row = store.get_ima_settings_row(str(user["id"]))
     return ImaSettings(
         imaClientId=row["ima_client_id"],
         imaApiKey=row["ima_api_key"],
@@ -515,9 +690,10 @@ def get_ima_settings():
 
 
 @app.put("/api/settings/ima")
-def put_ima_settings(req: ImaSettingsUpdate):
-    """更新 IMA 设置（仅更新提供的字段）。"""
+def put_ima_settings(req: ImaSettingsUpdate, user: dict = Depends(get_current_user)):
+    """更新当前用户的 IMA 设置（仅更新提供的字段）。"""
     row = store.update_ima_settings(
+        str(user["id"]),
         client_id=req.imaClientId,
         api_key=req.imaApiKey,
         skill_prompt=req.imaSkillPrompt,
@@ -532,17 +708,17 @@ def put_ima_settings(req: ImaSettingsUpdate):
 
 
 @app.get("/api/settings/regenerate")
-def get_regen_settings():
-    """读取生成策略设置（按类型：plan/content/quiz）。"""
-    row = store.get_gen_settings_row()
+def get_regen_settings(user: dict = Depends(get_current_user)):
+    """读取当前用户的生成策略设置（按类型：plan/content/quiz）。"""
+    row = store.get_gen_settings_row(str(user["id"]))
     return GenSettings(plan=row["plan"], content=row["content"], quiz=row["quiz"])
 
 
 @app.put("/api/settings/regenerate")
-def put_regen_settings(req: GenSettingsUpdate):
-    """更新生成策略设置（仅更新提供的字段）。"""
+def put_regen_settings(req: GenSettingsUpdate, user: dict = Depends(get_current_user)):
+    """更新当前用户的生成策略设置（仅更新提供的字段）。"""
     row = store.update_gen_settings(
-        plan=req.plan, content=req.content, quiz=req.quiz
+        str(user["id"]), plan=req.plan, content=req.content, quiz=req.quiz
     )
     logger.info("put_regen_settings: plan=%s content=%s quiz=%s",
                 bool(row["plan"]), bool(row["content"]), bool(row["quiz"]))
@@ -550,18 +726,19 @@ def put_regen_settings(req: GenSettingsUpdate):
 
 
 @app.get("/api/settings/model")
-def get_model_settings():
-    """读取当前生效的模型设置（网页配置优先，环境变量回退）。"""
-    api_key, model, base_url, max_tokens = store.get_llm_config()
+def get_model_settings(user: dict = Depends(get_current_user)):
+    """读取当前用户的模型设置（网页配置优先，环境变量回退）。"""
+    api_key, model, base_url, max_tokens = store.get_llm_config(str(user["id"]))
     return ModelSettings(
         apiKey=api_key, model=model, baseUrl=base_url, maxTokens=max_tokens
     )
 
 
 @app.put("/api/settings/model")
-def put_model_settings(req: ModelSettingsUpdate):
-    """保存模型设置（仅更新提供的字段），并刷新已缓存的模型实例。"""
+def put_model_settings(req: ModelSettingsUpdate, user: dict = Depends(get_current_user)):
+    """保存当前用户的模型设置（仅更新提供的字段），并刷新已缓存的模型实例。"""
     row = store.update_model_settings(
+        str(user["id"]),
         api_key=req.apiKey,
         model=req.model,
         base_url=req.baseUrl,
@@ -581,7 +758,7 @@ def put_model_settings(req: ModelSettingsUpdate):
 
 
 @app.post("/api/plans/{plan_id}/save-to-ima")
-def save_to_ima(plan_id: str, req: SaveToImaRequest):
+def save_to_ima(plan_id: str, req: SaveToImaRequest, user: dict = Depends(get_current_user)):
     """将计划或模块内容保存到 IMA 笔记。
 
     读取已存储的 IMA 凭证与 skill prompt，按需用 LLM 格式化后
@@ -593,13 +770,13 @@ def save_to_ima(plan_id: str, req: SaveToImaRequest):
 
     返回 ``SaveToImaResponse``: ``{ok, noteId, title, detail}``。
     """
-    doc = _get_doc(plan_id)
+    doc = _get_doc(plan_id, str(user["id"]))
     module = None
     if req.moduleId:
         module = _get_module(doc, req.moduleId)
     return coach.save_to_ima(
         doc.plan, module=module, content_type=req.contentType,
-        skill_prompt_override=req.skillPromptOverride,
+        skill_prompt_override=req.skillPromptOverride, user_id=str(user["id"]),
     )
 
 

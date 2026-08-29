@@ -3,6 +3,11 @@
 Store-dependent tests use a real PostgreSQL database (the DATABASE_URL from
 settings / .env).  Each test gets a clean database via TRUNCATE CASCADE.
 If PG is unreachable, store-dependent tests are skipped automatically.
+
+Account system: every test starts with a fresh admin (``admin_user``) and an
+optional normal user (``normal_user``).  The ``client`` fixture carries the
+admin's access token as a default Authorization header, so existing
+single-user endpoint tests keep working unchanged.
 """
 from __future__ import annotations
 
@@ -12,6 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import db, main, store
+from app.auth import create_access_token, hash_password
 from app.schemas import Content, GradingResult, Module, ModuleStatus, Plan, PlanSource, Quiz
 
 from _factories import make_plan
@@ -51,6 +57,23 @@ def _close_pool():
     db.close_pool()
 
 
+@pytest.fixture
+def admin_user(tmp_store):
+    """Fresh admin account (users table was truncated with the store)."""
+    return store.create_user("admin", hash_password("adminpw"), role="admin")
+
+
+@pytest.fixture
+def normal_user(tmp_store):
+    """Fresh normal (non-admin) account."""
+    return store.create_user("user1", hash_password("userpw"), role="user")
+
+
+def auth_headers(user: dict) -> dict:
+    """Authorization header carrying the user's access token."""
+    return {"Authorization": f"Bearer {create_access_token(user)}"}
+
+
 class FakeCoach:
     """Stand-in for LearningCoach returning preset structured results.
 
@@ -64,20 +87,20 @@ class FakeCoach:
         self.content: Content = Content(markdown="# heading\n\nbody paragraph", keyTakeaways=["point one", "point two"])
         self.last_grade_answers: dict | None = None
 
-    def make_plan(self, source: PlanSource) -> Plan:
+    def make_plan(self, source: PlanSource, user_id: str = "") -> Plan:
         assert self.plan is not None, "test must set fake_coach.plan"
         return self.plan
 
-    def make_quiz(self, plan: Plan, module: Module) -> Quiz:
+    def make_quiz(self, plan: Plan, module: Module, user_id: str = "") -> Quiz:
         assert self.quiz is not None, "test must set fake_coach.quiz"
         return self.quiz
 
-    def grade_quiz(self, plan: Plan, module: Module, answers: dict) -> GradingResult:
+    def grade_quiz(self, plan: Plan, module: Module, answers: dict, user_id: str = "") -> GradingResult:
         self.last_grade_answers = answers
         assert self.result is not None, "test must set fake_coach.result"
         return self.result
 
-    async def author_content_stream(self, plan: Plan, module: Module) -> AsyncIterator:
+    async def author_content_stream(self, plan: Plan, module: Module, user_id: str = "") -> AsyncIterator:
         yield ("delta", self.content.markdown)
         yield ("done", self.content)
 
@@ -88,22 +111,31 @@ def fake_coach() -> FakeCoach:
 
 
 @pytest.fixture
-def client(tmp_store, fake_coach, monkeypatch):
+def client(tmp_store, fake_coach, admin_user, monkeypatch):
+    """TestClient acting as the admin user (default Authorization header)."""
     monkeypatch.setattr(main, "coach", fake_coach)
     monkeypatch.setattr(main, "is_configured", lambda: True)
-    return TestClient(main.app)
+    monkeypatch.setattr(main, "is_configured_for_user", lambda uid: True)
+    monkeypatch.setattr(store, "is_llm_configured_for_user", lambda uid: True)
+    c = TestClient(main.app)
+    c.headers.update(auth_headers(admin_user))
+    return c
 
 
 @pytest.fixture
-def unconfigured_client(tmp_store, fake_coach, monkeypatch):
+def unconfigured_client(tmp_store, fake_coach, admin_user, monkeypatch):
     monkeypatch.setattr(main, "coach", fake_coach)
     monkeypatch.setattr(main, "is_configured", lambda: False)
-    return TestClient(main.app)
+    monkeypatch.setattr(main, "is_configured_for_user", lambda uid: False)
+    monkeypatch.setattr(store, "is_llm_configured_for_user", lambda uid: False)
+    c = TestClient(main.app)
+    c.headers.update(auth_headers(admin_user))
+    return c
 
 
 @pytest.fixture
-def seeded_doc(tmp_store):
+def seeded_doc(admin_user):
     """A document persisted in the store: 3 modules, first completed."""
     plan = make_plan(modules=3)
     plan.modules[0].status = ModuleStatus.completed
-    return store.create_document(PlanSource(input="a topic", mode="topic"), plan)
+    return store.create_document(PlanSource(input="a topic", mode="topic"), plan, str(admin_user["id"]))

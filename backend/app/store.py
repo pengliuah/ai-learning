@@ -1,15 +1,22 @@
 """PostgreSQL-backed store: CRUD for learning plans and module artifacts.
 
-Replaces the former JSON-file store (plans.json).  The public interface is
-unchanged so ``main.py`` needs no edits:
+Replaces the former JSON-file store (plans.json).  All plan operations are
+scoped to an owning ``user_id`` (account system): the caller (routes) passes
+the authenticated user's id and every query filters on ``plans.user_id``.
+
+Plan interface:
 
     list_documents / list_items / get_document / save_document
-    create_document / delete_document / update_module
+    create_document / delete_document / update_module   (all take user_id)
 
 ``update_module`` keeps the ``mutate(module)`` callback pattern: it loads the
 module, applies the callback, then syncs the module and all its child rows
 (content, questions, grading result + question results) back to the DB in one
 transaction.
+
+Settings (model / IMA / generation strategy) are per-user tables keyed by
+``user_id``; empty fields fall back to ARK_* env vars. User accounts and
+refresh tokens are managed here too (used by ``auth.py`` and the routes).
 """
 
 from __future__ import annotations
@@ -20,6 +27,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Callable
 
+from psycopg import errors as psycopg_errors
 from psycopg.types.json import Jsonb
 
 from .config import DATA_DIR, settings
@@ -135,13 +143,18 @@ def _load_module(conn, row) -> Module:
     )
 
 
-def _load_document(conn, plan_id: str) -> Document | None:
-    """Assemble a full Document (plan + all modules + children) from DB."""
+def _load_document(conn, plan_id: str, user_id: str) -> Document | None:
+    """Assemble a full Document (plan + all modules + children) from DB.
+
+    Scoped to ``user_id``: another user's plan id looks up as missing.
+    Ids are compared as text so malformed (non-UUID) ids from URLs simply
+    match nothing instead of raising a cast error.
+    """
     row = conn.execute(
         """SELECT id, title, goal, summary, level, total_minutes,
                   source_input, source_mode, created_at, updated_at
-           FROM plans WHERE id = %s""",
-        (plan_id,),
+           FROM plans WHERE id::text = %s AND user_id::text = %s""",
+        (plan_id, user_id),
     ).fetchone()
     if row is None:
         return None
@@ -259,21 +272,23 @@ def _sync_module(conn, plan_id: str, module: Module) -> None:
 # Public store API (same interface as the former JSON store)
 # ---------------------------------------------------------------------------
 
-def list_documents() -> list[Document]:
+def list_documents(user_id: str) -> list[Document]:
     with db_conn() as conn:
         ids = [r["id"] for r in conn.execute(
-            "SELECT id FROM plans ORDER BY created_at").fetchall()]
-        docs = [_load_document(conn, str(pid)) for pid in ids]
-    logger.debug("list_documents: count=%d", len(docs))
+            "SELECT id FROM plans WHERE user_id = %s ORDER BY created_at",
+            (user_id,)).fetchall()]
+        docs = [_load_document(conn, str(pid), user_id) for pid in ids]
+    logger.debug("list_documents: user=%s count=%d", user_id, len(docs))
     return docs
 
 
-def list_items(q: str | None = None) -> list[PlanListItem]:
-    """List plan summaries, optionally filtered by a case-insensitive title
-    substring. An empty/whitespace ``q`` (or None) returns all plans."""
+def list_items(user_id: str, q: str | None = None) -> list[PlanListItem]:
+    """List the user's plan summaries, optionally filtered by a
+    case-insensitive title substring. An empty/whitespace ``q`` (or None)
+    returns all of the user's plans."""
     q = (q or "").strip()
-    where = "WHERE p.title ILIKE %s" if q else ""
-    params: tuple = (f"%{q}%",) if q else ()
+    where = "WHERE p.user_id = %s AND p.title ILIKE %s" if q else "WHERE p.user_id = %s"
+    params: tuple = (user_id, f"%{q}%") if q else (user_id,)
     sql = f"""SELECT p.id, p.title, p.created_at,
                      COUNT(m.id) AS total,
                      COUNT(m.id) FILTER (WHERE m.status = 'completed') AS done
@@ -297,15 +312,15 @@ def list_items(q: str | None = None) -> list[PlanListItem]:
     return items
 
 
-def get_document(plan_id: str) -> Document | None:
+def get_document(plan_id: str, user_id: str) -> Document | None:
     with db_conn() as conn:
-        doc = _load_document(conn, plan_id)
+        doc = _load_document(conn, plan_id, user_id)
     logger.debug("get_document: plan_id=%s found=%s", plan_id, doc is not None)
     return doc
 
 
-def save_document(doc: Document) -> Document:
-    """Upsert a full document (plan + modules + children).
+def save_document(doc: Document, user_id: str) -> Document:
+    """Upsert a full document (plan + modules + children) owned by ``user_id``.
 
     Used by ``create_document``; also supports re-saving an existing doc by
     replacing all modules and their children.
@@ -315,16 +330,16 @@ def save_document(doc: Document) -> Document:
     with db_conn() as conn:
         conn.execute(
             """INSERT INTO plans
-                   (id, title, goal, summary, level, total_minutes,
+                   (id, user_id, title, goal, summary, level, total_minutes,
                     source_input, source_mode, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT (id) DO UPDATE SET
                    title = EXCLUDED.title, goal = EXCLUDED.goal,
                    summary = EXCLUDED.summary, level = EXCLUDED.level,
                    total_minutes = EXCLUDED.total_minutes,
                    source_input = EXCLUDED.source_input,
                    source_mode = EXCLUDED.source_mode""",
-            (doc.id, p.title, p.goal, p.summary, p.level.value,
+            (doc.id, user_id, p.title, p.goal, p.summary, p.level.value,
              p.totalMinutes, doc.source.input, doc.source.mode,
              doc.createdAt, doc.updatedAt),
         )
@@ -349,7 +364,7 @@ def save_document(doc: Document) -> Document:
     return doc
 
 
-def create_document(source: PlanSource, plan: Plan) -> Document:
+def create_document(source: PlanSource, plan: Plan, user_id: str) -> Document:
     now = datetime.now(timezone.utc)
     doc = Document(
         id=str(uuid.uuid4()),
@@ -359,25 +374,26 @@ def create_document(source: PlanSource, plan: Plan) -> Document:
         plan=plan,
     )
     logger.debug("create_document: plan_id=%s title=%s", doc.id, plan.title)
-    return save_document(doc)
+    return save_document(doc, user_id)
 
 
-def delete_document(plan_id: str) -> bool:
+def delete_document(plan_id: str, user_id: str) -> bool:
     with db_conn() as conn:
         result = conn.execute(
-            "DELETE FROM plans WHERE id = %s", (plan_id,))
+            "DELETE FROM plans WHERE id::text = %s AND user_id::text = %s",
+            (plan_id, user_id))
         deleted = result.rowcount > 0
     logger.debug("delete_document: plan_id=%s deleted=%s", plan_id, deleted)
     return deleted
 
 
 def update_module(
-    plan_id: str, module_id: str, mutate: Callable[[Module], None]
+    plan_id: str, module_id: str, mutate: Callable[[Module], None], user_id: str
 ) -> Document:
     """Load a module, apply ``mutate``, sync changes to DB, return full doc."""
     logger.debug("update_module: plan_id=%s module_id=%s", plan_id, module_id)
     with db_conn() as conn:
-        doc = _load_document(conn, plan_id)
+        doc = _load_document(conn, plan_id, user_id)
         if doc is None:
             raise KeyError(plan_id)
         module = next((m for m in doc.plan.modules if m.id == module_id), None)
@@ -386,25 +402,32 @@ def update_module(
         mutate(module)
         _sync_module(conn, plan_id, module)
         # Reload to pick up the trigger-set updated_at and any DB defaults.
-        doc = _load_document(conn, plan_id)
+        doc = _load_document(conn, plan_id, user_id)
     return doc
 
 
 # ---------------------------------------------------------------------------
-# IMA settings (single-row table: credentials + skill prompt)
+# IMA settings (per-user table: credentials + skill prompt)
 # ---------------------------------------------------------------------------
 
-def get_ima_settings_row() -> dict:
-    """Return the ima_settings row as a dict, creating defaults if missing."""
+def get_ima_settings_row(user_id: str) -> dict:
+    """Return the user's ima settings row, creating defaults if missing."""
     with db_conn() as conn:
-        row = conn.execute("SELECT * FROM ima_settings WHERE id = 1").fetchone()
+        row = conn.execute(
+            "SELECT * FROM user_ima_settings WHERE user_id = %s", (user_id,)
+        ).fetchone()
         if row is None:
-            conn.execute("INSERT INTO ima_settings (id) VALUES (1)")
-            row = conn.execute("SELECT * FROM ima_settings WHERE id = 1").fetchone()
+            conn.execute(
+                "INSERT INTO user_ima_settings (user_id) VALUES (%s)", (user_id,)
+            )
+            row = conn.execute(
+                "SELECT * FROM user_ima_settings WHERE user_id = %s", (user_id,)
+            ).fetchone()
     return dict(row)
 
 
 def update_ima_settings(
+    user_id: str,
     client_id: str | None = None,
     api_key: str | None = None,
     skill_prompt: str | None = None,
@@ -423,43 +446,51 @@ def update_ima_settings(
         params.append(skill_prompt)
     with db_conn() as conn:
         conn.execute(
-            "INSERT INTO ima_settings (id) VALUES (1) ON CONFLICT DO NOTHING"
+            "INSERT INTO user_ima_settings (user_id) VALUES (%s) ON CONFLICT DO NOTHING",
+            (user_id,),
         )
         if sets:
-            params.append(1)
+            params.append(user_id)
             conn.execute(
-                f"UPDATE ima_settings SET {', '.join(sets)} WHERE id = %s",
+                f"""UPDATE user_ima_settings SET {', '.join(sets)}
+                    WHERE user_id = %s""",
                 params,
             )
-        row = conn.execute("SELECT * FROM ima_settings WHERE id = 1").fetchone()
+        row = conn.execute(
+            "SELECT * FROM user_ima_settings WHERE user_id = %s", (user_id,)
+        ).fetchone()
     return dict(row)
 
 
 # ---------------------------------------------------------------------------
-# Gen settings (per-type: plan / content / quiz strategy prompts)
+# Gen settings (per-user, per-type: plan / content / quiz strategy prompts)
 # ---------------------------------------------------------------------------
 
 _GEN_TYPES = ("plan", "content", "quiz")
 
 
-def get_gen_settings_row() -> dict:
-    """Return {"plan": str, "content": str, "quiz": str}.
+def get_gen_settings_row(user_id: str) -> dict:
+    """Return {"plan": str, "content": str, "quiz": str} for the user.
 
     Ensures all three rows exist, creating missing ones with empty defaults.
     """
     with db_conn() as conn:
         for gt in _GEN_TYPES:
             conn.execute(
-                "INSERT INTO gen_settings (gen_type) VALUES (%s) ON CONFLICT DO NOTHING",
-                (gt,),
+                """INSERT INTO user_gen_settings (user_id, gen_type)
+                   VALUES (%s, %s) ON CONFLICT DO NOTHING""",
+                (user_id, gt),
             )
         rows = conn.execute(
-            "SELECT gen_type, strategy FROM gen_settings ORDER BY gen_type"
+            """SELECT gen_type, strategy FROM user_gen_settings
+               WHERE user_id = %s ORDER BY gen_type""",
+            (user_id,),
         ).fetchall()
     return {r["gen_type"]: r["strategy"] for r in rows}
 
 
 def update_gen_settings(
+    user_id: str,
     plan: str | None = None,
     content: str | None = None,
     quiz: str | None = None,
@@ -470,12 +501,16 @@ def update_gen_settings(
         for gt, val in updates.items():
             if val is not None:
                 conn.execute(
-                    "INSERT INTO gen_settings (gen_type, strategy) VALUES (%s, %s) "
-                    "ON CONFLICT (gen_type) DO UPDATE SET strategy = EXCLUDED.strategy",
-                    (gt, val),
+                    """INSERT INTO user_gen_settings (user_id, gen_type, strategy)
+                       VALUES (%s, %s, %s)
+                       ON CONFLICT (user_id, gen_type)
+                       DO UPDATE SET strategy = EXCLUDED.strategy""",
+                    (user_id, gt, val),
                 )
         rows = conn.execute(
-            "SELECT gen_type, strategy FROM gen_settings ORDER BY gen_type"
+            """SELECT gen_type, strategy FROM user_gen_settings
+               WHERE user_id = %s ORDER BY gen_type""",
+            (user_id,),
         ).fetchall()
     return {r["gen_type"]: r["strategy"] for r in rows}
 
@@ -485,7 +520,8 @@ def auto_migrate_if_needed() -> None:
 
     Runs on app startup after schema init. Only migrates when the plans
     table is empty AND plans.json exists with data, so it is safe to run
-    on every startup without re-importing.
+    on every startup without re-importing. Legacy plans land on the first
+    admin account.
     """
     plans_json = DATA_DIR / "plans.json"
     if not plans_json.exists():
@@ -498,6 +534,10 @@ def auto_migrate_if_needed() -> None:
         return
     if count > 0:
         return
+    owner = first_admin_id()
+    if owner is None:
+        logger.warning("auto_migrate: no admin account, cannot assign legacy plans")
+        return
     raw = json.loads(plans_json.read_text(encoding="utf-8"))
     if not raw:
         return
@@ -506,7 +546,7 @@ def auto_migrate_if_needed() -> None:
     for plan_id, doc_dict in raw.items():
         try:
             doc = Document.model_validate(doc_dict)
-            save_document(doc)
+            save_document(doc, owner)
             logger.info("auto_migrate: migrated %s (%s)", plan_id, doc.plan.title)
             migrated += 1
         except Exception as exc:
@@ -515,24 +555,31 @@ def auto_migrate_if_needed() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Model settings (single-row: LLM API key / model / base URL)
+# Model settings (per-user: LLM API key / model / base URL)
 #
 # Saved from the web UI ("模型设置"). Empty fields fall back to the ARK_*
 # environment variables (and their built-in defaults), so env vars still
 # seed fresh deployments.
 # ---------------------------------------------------------------------------
 
-def get_model_settings_row() -> dict:
-    """Return the model_settings row as a dict, creating defaults if missing."""
+def get_model_settings_row(user_id: str) -> dict:
+    """Return the user's model settings row, creating defaults if missing."""
     with db_conn() as conn:
-        row = conn.execute("SELECT * FROM model_settings WHERE id = 1").fetchone()
+        row = conn.execute(
+            "SELECT * FROM user_model_settings WHERE user_id = %s", (user_id,)
+        ).fetchone()
         if row is None:
-            conn.execute("INSERT INTO model_settings (id) VALUES (1)")
-            row = conn.execute("SELECT * FROM model_settings WHERE id = 1").fetchone()
+            conn.execute(
+                "INSERT INTO user_model_settings (user_id) VALUES (%s)", (user_id,)
+            )
+            row = conn.execute(
+                "SELECT * FROM user_model_settings WHERE user_id = %s", (user_id,)
+            ).fetchone()
     return dict(row)
 
 
 def update_model_settings(
+    user_id: str,
     api_key: str | None = None,
     model: str | None = None,
     base_url: str | None = None,
@@ -555,25 +602,29 @@ def update_model_settings(
         params.append(max_tokens)
     with db_conn() as conn:
         conn.execute(
-            "INSERT INTO model_settings (id) VALUES (1) ON CONFLICT DO NOTHING"
+            "INSERT INTO user_model_settings (user_id) VALUES (%s) ON CONFLICT DO NOTHING",
+            (user_id,),
         )
         if sets:
-            params.append(1)
+            params.append(user_id)
             conn.execute(
-                f"UPDATE model_settings SET {', '.join(sets)} WHERE id = %s",
+                f"""UPDATE user_model_settings SET {', '.join(sets)}
+                    WHERE user_id = %s""",
                 params,
             )
-        row = conn.execute("SELECT * FROM model_settings WHERE id = 1").fetchone()
+        row = conn.execute(
+            "SELECT * FROM user_model_settings WHERE user_id = %s", (user_id,)
+        ).fetchone()
     return dict(row)
 
 
-def get_llm_config() -> tuple[str, str, str, int]:
-    """Effective LLM connection config ``(api_key, model, base_url, max_tokens)``.
+def get_llm_config(user_id: str) -> tuple[str, str, str, int]:
+    """Effective LLM config ``(api_key, model, base_url, max_tokens)``.
 
-    Non-empty values saved in the DB (web UI) win; empty fields fall back
+    Non-empty values saved by the user (web UI) win; empty fields fall back
     to the ARK_* environment variables / built-in defaults.
     """
-    row = get_model_settings_row()
+    row = get_model_settings_row(user_id)
     api_key = row["api_key"] or settings.ark_api_key or ""
     model = row["model"] or settings.ark_model
     base_url = row["base_url"] or settings.ark_base_url
@@ -582,12 +633,167 @@ def get_llm_config() -> tuple[str, str, str, int]:
 
 
 def is_llm_configured() -> bool:
-    """True when an LLM API key is available (DB first, env fallback).
+    """True when an LLM API key is available from env vars.
 
-    Falls back to the env-only check when the database is unreachable so
-    ``/api/health`` keeps answering during a PG outage.
+    Anonymous fallback for ``/api/health``: per-user configuration cannot be
+    checked without auth, so this reports deployment-level (env) readiness.
+    Falls back to False safely when the database is unreachable.
     """
     try:
-        return bool(get_llm_config()[0])
+        return bool(settings.ark_api_key)
+    except Exception:
+        return False
+
+
+def is_llm_configured_for_user(user_id: str) -> bool:
+    """True when an LLM API key is available (user row first, env fallback)."""
+    try:
+        return bool(get_llm_config(user_id)[0])
     except Exception:
         return bool(settings.ark_api_key)
+
+
+# ---------------------------------------------------------------------------
+# Users (account system) — used by auth.py and the admin routes
+# ---------------------------------------------------------------------------
+
+def _user_public(row) -> dict:
+    """Public shape of a users row (never includes the password hash)."""
+    return {
+        "id": str(row["id"]),
+        "username": row["username"],
+        "email": row["email"],
+        "role": row["role"],
+        "createdAt": row["created_at"],
+    }
+
+
+def create_user(
+    username: str, password_hash: str, role: str = "user", email: str | None = None
+) -> dict:
+    """Create a user and return its public dict. Raises ValueError on
+    duplicate username/email."""
+    with db_conn() as conn:
+        try:
+            row = conn.execute(
+                """INSERT INTO users (username, password_hash, role, email)
+                   VALUES (%s, %s, %s, %s)
+                   RETURNING id, username, email, role, created_at""",
+                (username, password_hash, role, email),
+            ).fetchone()
+        except psycopg_errors.UniqueViolation as exc:
+            raise ValueError("用户名或邮箱已存在") from exc
+    logger.info("create_user: %s role=%s", username, role)
+    return _user_public(row)
+
+
+def get_user(user_id: str) -> dict | None:
+    """Full user row (including password_hash) by id, or None."""
+    with db_conn() as conn:
+        row = conn.execute(
+            """SELECT id, username, email, password_hash, role,
+                      wechat_unionid, wechat_openid, created_at, updated_at
+               FROM users WHERE id = %s""",
+            (user_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_user_by_username(username: str) -> dict | None:
+    """Full user row (including password_hash) by username, or None."""
+    with db_conn() as conn:
+        row = conn.execute(
+            """SELECT id, username, email, password_hash, role,
+                      wechat_unionid, wechat_openid, created_at, updated_at
+               FROM users WHERE username = %s""",
+            (username,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_users() -> list[dict]:
+    """All users (public shape), newest first."""
+    with db_conn() as conn:
+        rows = conn.execute(
+            """SELECT id, username, email, role, created_at
+               FROM users ORDER BY created_at DESC"""
+        ).fetchall()
+    return [_user_public(r) for r in rows]
+
+
+def delete_user(user_id: str) -> bool:
+    with db_conn() as conn:
+        result = conn.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        deleted = result.rowcount > 0
+    logger.info("delete_user: user=%s deleted=%s", user_id, deleted)
+    return deleted
+
+
+def update_user_password(user_id: str, password_hash: str) -> None:
+    with db_conn() as conn:
+        conn.execute(
+            "UPDATE users SET password_hash = %s WHERE id = %s",
+            (password_hash, user_id),
+        )
+    logger.info("update_user_password: user=%s", user_id)
+
+
+def first_admin_id() -> str | None:
+    """Id of the oldest admin account (legacy data owner), or None."""
+    with db_conn() as conn:
+        row = conn.execute(
+            """SELECT id FROM users WHERE role = 'admin'
+               ORDER BY created_at LIMIT 1"""
+        ).fetchone()
+    return str(row["id"]) if row else None
+
+
+# ---------------------------------------------------------------------------
+# Refresh tokens (opaque, only SHA-256 hashes are stored)
+# ---------------------------------------------------------------------------
+
+def create_refresh_token_row(user_id: str, token_hash: str, expires_at) -> None:
+    with db_conn() as conn:
+        conn.execute(
+            """INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+               VALUES (%s, %s, %s)""",
+            (user_id, token_hash, expires_at),
+        )
+
+
+def get_refresh_token_row(token_hash: str) -> dict | None:
+    with db_conn() as conn:
+        row = conn.execute(
+            """SELECT id, user_id, token_hash, expires_at, revoked
+               FROM refresh_tokens WHERE token_hash = %s""",
+            (token_hash,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def revoke_refresh_token_row(token_hash: str) -> None:
+    with db_conn() as conn:
+        conn.execute(
+            "UPDATE refresh_tokens SET revoked = true WHERE token_hash = %s",
+            (token_hash,),
+        )
+
+
+def revoke_all_refresh_tokens(user_id: str) -> None:
+    """Revoke every refresh token of a user (logout-everywhere / leak
+    response / password change)."""
+    with db_conn() as conn:
+        conn.execute(
+            "UPDATE refresh_tokens SET revoked = true WHERE user_id = %s",
+            (user_id,),
+        )
+    logger.info("revoke_all_refresh_tokens: user=%s", user_id)
+
+
+def delete_expired_refresh_tokens() -> None:
+    """Best-effort housekeeping: remove expired/revoked rows."""
+    with db_conn() as conn:
+        conn.execute(
+            """DELETE FROM refresh_tokens
+               WHERE expires_at < now() OR revoked = true"""
+        )

@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.db import init_schema          # noqa: E402
 from app.schemas import Document        # noqa: E402
-from app.store import save_document     # noqa: E402
+from app.store import first_admin_id, save_document  # noqa: E402
 
 PLANS_JSON = Path(__file__).resolve().parent.parent / "data" / "plans.json"
 
@@ -33,6 +33,11 @@ def main() -> None:
 
     init_schema()
 
+    owner = first_admin_id()
+    if owner is None:
+        print("No admin account found - cannot assign legacy plans.")
+        return
+
     raw = json.loads(PLANS_JSON.read_text(encoding="utf-8"))
     if not raw:
         print("plans.json is empty - nothing to migrate.")
@@ -41,7 +46,7 @@ def main() -> None:
     count = 0
     for plan_id, doc_dict in raw.items():
         doc = Document.model_validate(doc_dict)
-        save_document(doc)
+        save_document(doc, owner)
         count += 1
         print(f"  migrated {plan_id} ({doc.plan.title})")
 

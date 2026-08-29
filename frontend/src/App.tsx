@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { ToastProvider } from "./components/Toast";
+import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { Home } from "./pages/Home";
 import { CreatePlan } from "./pages/CreatePlan";
 import { PlanDetail } from "./pages/PlanDetail";
@@ -10,27 +11,142 @@ import { Coach } from "./pages/Coach";
 import { ImaSettings } from "./pages/ImaSettings";
 import { RegenerateSettings } from "./pages/RegenerateSettings";
 import { ModelSettings } from "./pages/ModelSettings";
+import { Login } from "./pages/Login";
+import { AdminUsers } from "./pages/AdminUsers";
+import type { ReactNode } from "react";
 
 const queryClient = new QueryClient();
+
+/** 未登录跳登录页；记录来源路径，登录后回跳。 */
+function RequireAuth({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const location = useLocation();
+  if (!user) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+  return <>{children}</>;
+}
+
+/** 仅管理员可进的页面，普通用户重定向回首页。 */
+function RequireAdmin({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  if (!user || user.role !== "admin") {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
+}
+
+function AppRoutes() {
+  const { user } = useAuth();
+  return (
+    <Routes>
+      <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+      <Route
+        path="/"
+        element={
+          <RequireAuth>
+            <Layout>
+              <Home />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/plans/new"
+        element={
+          <RequireAuth>
+            <Layout>
+              <CreatePlan />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/plans/:planId"
+        element={
+          <RequireAuth>
+            <Layout>
+              <PlanDetail />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/plans/:planId/modules/:moduleId"
+        element={
+          <RequireAuth>
+            <Layout>
+              <ModuleDetail />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/coach"
+        element={
+          <RequireAuth>
+            <Layout>
+              <Coach />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/settings/ima"
+        element={
+          <RequireAuth>
+            <Layout>
+              <ImaSettings />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/settings/regenerate"
+        element={
+          <RequireAuth>
+            <Layout>
+              <RegenerateSettings />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/settings/model"
+        element={
+          <RequireAuth>
+            <Layout>
+              <ModelSettings />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/admin/users"
+        element={
+          <RequireAuth>
+            <RequireAdmin>
+              <Layout>
+                <AdminUsers />
+              </Layout>
+            </RequireAdmin>
+          </RequireAuth>
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
 
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
-        <BrowserRouter>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/plans/new" element={<CreatePlan />} />
-              <Route path="/plans/:planId" element={<PlanDetail />} />
-              <Route path="/plans/:planId/modules/:moduleId" element={<ModuleDetail />} />
-              <Route path="/coach" element={<Coach />} />
-              <Route path="/settings/ima" element={<ImaSettings />} />
-              <Route path="/settings/regenerate" element={<RegenerateSettings />} />
-              <Route path="/settings/model" element={<ModelSettings />} />
-            </Routes>
-          </Layout>
-        </BrowserRouter>
+        <AuthProvider>
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </AuthProvider>
       </ToastProvider>
     </QueryClientProvider>
   );

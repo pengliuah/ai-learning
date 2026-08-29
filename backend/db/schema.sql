@@ -25,10 +25,53 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ---------------------------------------------------------------------------
+-- users  —  account system (username/email + password, roles)
+--
+-- `role` gates admin-only endpoints; per-user data is scoped via
+-- plans.user_id and the user_* settings tables below. wechat_* are reserved
+-- for a future WeChat integration (unionid unifies accounts across apps).
+-- ---------------------------------------------------------------------------
+CREATE TABLE users (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username      TEXT NOT NULL UNIQUE,
+    email         TEXT UNIQUE,
+    password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'user'
+                  CHECK (role IN ('admin', 'user')),
+    wechat_unionid TEXT UNIQUE,
+    wechat_openid  TEXT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TRIGGER users_set_updated_at
+    BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- refresh_tokens  —  opaque refresh tokens, hashed at rest
+--
+-- Rotated on every use: the presented token is revoked and a new row is
+-- inserted. Re-presenting a revoked token revokes all of the user's tokens
+-- (replay of a possibly-stolen token). Logout revokes explicitly.
+-- ---------------------------------------------------------------------------
+CREATE TABLE refresh_tokens (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked    BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_refresh_tokens_user ON refresh_tokens (user_id);
+
+-- ---------------------------------------------------------------------------
 -- plans  —  one row per learning plan (the top-level Document)
+--
+-- `user_id` scopes every plan to its owning account.
 -- ---------------------------------------------------------------------------
 CREATE TABLE plans (
     id            UUID PRIMARY KEY,
+    user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title         TEXT NOT NULL,
     goal          TEXT NOT NULL DEFAULT '',
     summary       TEXT NOT NULL DEFAULT '',
@@ -44,6 +87,7 @@ CREATE TABLE plans (
 CREATE TRIGGER plans_set_updated_at
     BEFORE UPDATE ON plans
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE INDEX idx_plans_user ON plans (user_id);
 
 -- ---------------------------------------------------------------------------
 -- modules  —  one row per module within a plan
@@ -158,53 +202,56 @@ CREATE TABLE question_results (
 CREATE INDEX idx_qresults_grading ON question_results (grading_module_id);
 
 -- ---------------------------------------------------------------------------
--- ima_settings  -  single-row table for IMA OpenAPI configuration
+-- user_ima_settings  -  per-user IMA OpenAPI configuration
 --
 -- Stores IMA credentials + the skill prompt that controls how content is
--- formatted before saving to IMA.  One row (id=1) per deployment.
+-- formatted before saving to IMA. One row per user; empty values mean the
+-- user has not configured IMA.
 -- ---------------------------------------------------------------------------
-CREATE TABLE ima_settings (
-    id                INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+CREATE TABLE user_ima_settings (
+    user_id           UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     ima_client_id     TEXT NOT NULL DEFAULT '',
     ima_api_key       TEXT NOT NULL DEFAULT '',
     ima_skill_prompt  TEXT NOT NULL DEFAULT '',
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE TRIGGER ima_settings_set_updated_at
-    BEFORE UPDATE ON ima_settings
+CREATE TRIGGER user_ima_settings_set_updated_at
+    BEFORE UPDATE ON user_ima_settings
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ---------------------------------------------------------------------------
--- gen_settings  -  per-type generation strategy prompts
+-- user_gen_settings  -  per-user generation strategy prompts
 --
--- One row per generation type (plan / content / quiz).  Each row's
--- ``strategy`` text is appended to the LLM prompt when generating that
--- type of content, letting users steer generation without code changes.
+-- One row per (user, generation type). Each row's ``strategy`` text is
+-- appended to the LLM prompt when generating that type of content, letting
+-- users steer generation without code changes.
 -- ---------------------------------------------------------------------------
-CREATE TABLE gen_settings (
-    gen_type          TEXT PRIMARY KEY CHECK (gen_type IN ('plan', 'content', 'quiz')),
+CREATE TABLE user_gen_settings (
+    user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    gen_type          TEXT NOT NULL CHECK (gen_type IN ('plan', 'content', 'quiz')),
     strategy          TEXT NOT NULL DEFAULT '',
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, gen_type)
 );
-CREATE TRIGGER gen_settings_set_updated_at
-    BEFORE UPDATE ON gen_settings
+CREATE TRIGGER user_gen_settings_set_updated_at
+    BEFORE UPDATE ON user_gen_settings
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ---------------------------------------------------------------------------
--- model_settings  -  single-row table for LLM (Ark/OpenAI 兼容) connection
+-- user_model_settings  -  per-user LLM (Ark/OpenAI 兼容) connection
 --
--- API Key / 模型 / Base URL 在网页「模型设置」中配置并保存到此表。
--- 空值回退到 ARK_* 环境变量及内置默认值，因此环境变量仍可作为新部署的
--- 初始配置。One row (id=1) per deployment.
+-- API Key / 模型 / Base URL 在网页「模型设置」中配置并保存到此表（按用户）。
+-- 空值回退到 ARK_* 环境变量及内置默认值，因此环境变量仍可作为部署级的
+-- 初始配置。
 -- ---------------------------------------------------------------------------
-CREATE TABLE model_settings (
-    id          INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+CREATE TABLE user_model_settings (
+    user_id     UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     api_key     TEXT NOT NULL DEFAULT '',
     model       TEXT NOT NULL DEFAULT '',
     base_url    TEXT NOT NULL DEFAULT '',
     max_tokens  INTEGER NOT NULL DEFAULT 8192,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE TRIGGER model_settings_set_updated_at
-    BEFORE UPDATE ON model_settings
+CREATE TRIGGER user_model_settings_set_updated_at
+    BEFORE UPDATE ON user_model_settings
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();

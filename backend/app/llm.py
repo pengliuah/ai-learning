@@ -5,14 +5,14 @@ from langchain_openai import ChatOpenAI
 from . import store
 
 
-def build_chat_model(**kwargs) -> ChatOpenAI:
+def build_chat_model(user_id: str, **kwargs) -> ChatOpenAI:
     """ChatOpenAI pointed at the configured OpenAI-compatible endpoint.
 
-    Connection settings come from the ``model_settings`` DB row (saved via
-    the web UI), with ARK_* environment variables as fallback for empty
-    fields. Extra ``kwargs`` override the effective config.
+    Connection settings come from the user's ``user_model_settings`` DB row
+    (saved via the web UI), with ARK_* environment variables as fallback for
+    empty fields. Extra ``kwargs`` override the effective config.
     """
-    api_key, model, base_url, max_tokens = store.get_llm_config()
+    api_key, model, base_url, max_tokens = store.get_llm_config(user_id)
     if not api_key:
         raise RuntimeError("model API key is not configured")
     params = {

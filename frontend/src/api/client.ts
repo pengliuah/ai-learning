@@ -136,6 +136,14 @@ export const api = {
 
   getMe: () => json<User>("/auth/me"),
 
+  /** 修改自己的密码；后端会吊销该用户全部 refresh token。 */
+  changePassword: (oldPassword: string, newPassword: string) =>
+    json<{ ok: boolean }>("/auth/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+    }),
+
   // ----- admin（用户管理）-----
 
   listUsers: () => json<User[]>("/admin/users"),

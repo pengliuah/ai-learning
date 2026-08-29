@@ -62,7 +62,6 @@ export function Login() {
               <BookOpen className="h-5 w-5 text-indigo-300" />
               智学助手
             </div>
-            <p className="text-sm text-white/60">登录，开始你的星空探索</p>
           </div>
 
           <div className="space-y-4">

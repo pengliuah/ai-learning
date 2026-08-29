@@ -102,9 +102,10 @@ sudo bash scripts/deploy.sh prod
 3. `git fetch + reset --hard origin/master` 拉取最新代码
    （`.env`、`nginx/ssl/`、`backend/data/` 均被 gitignore，不受影响）；
 4. 恢复第 2 步备份的自定义配置；prod 额外校验证书文件存在；
-5. 构建镜像、启动，轮询 `http://127.0.0.1/api/health` 最多 60 秒，
-   收到 **401** 即判定部署成功；超时失败会提示用
-   `docker compose -f docker-compose.<env>.yml logs zhixue` 排查。
+5. 构建镜像、启动，轮询 `/api/health` 最多 60 秒（test 走 `http://127.0.0.1`，
+   prod 走 `https://127.0.0.1` 加 `-k`——80 端口会对所有请求 301 跳 HTTPS，
+   必须直接探测 443 才能拿到后端应答），收到 **401** 即判定部署成功；
+   超时失败会提示用 `docker compose -f docker-compose.<env>.yml logs zhixue` 排查。
 
 数据库表结构迁移是**自动**的：后端启动时 `init_schema()` 幂等执行增量迁移
 （账号系统、每用户设置表等），无需手动执行 SQL；数据库本身由

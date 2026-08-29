@@ -133,11 +133,19 @@ cd "$APP_DIR"
 docker compose -f "$COMPOSE_FILE" build
 docker compose -f "$COMPOSE_FILE" up -d
 
-# 健康检查: /api/health 需登录, 401 即代表 nginx→后端→DB 链路活着且鉴权生效
-log "健康检查: 轮询 http://127.0.0.1/api/health (预期 401)..."
+# 健康检查: /api/health 需登录, 401 即代表 nginx→后端→DB 链路活着且鉴权生效。
+# prod 必须走 https (80 端口对所有路径 301 跳 443, 打 http 永远拿不到后端应答);
+# 证书签给域名而探测用 127.0.0.1, 故加 -k 跳过证书校验。
+URL_SCHEME=http
+CURL_FLAGS=()
+if [ "$ENV" = "prod" ]; then
+  URL_SCHEME=https
+  CURL_FLAGS=(-k)
+fi
+log "健康检查: 轮询 $URL_SCHEME://127.0.0.1/api/health (预期 401)..."
 ok=""
 for i in $(seq 1 30); do
-  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1/api/health || true)
+  code=$(curl "${CURL_FLAGS[@]}" -s -o /dev/null -w '%{http_code}' --max-time 3 "$URL_SCHEME://127.0.0.1/api/health" || true)
   if [ "$code" = "401" ]; then
     ok=1
     break
@@ -156,7 +164,4 @@ fi
 
 log "部署完成 ($ENV), 当前容器状态:"
 docker compose -f "$COMPOSE_FILE" ps
-URL_SCHEME=http
-[ "$ENV" = "prod" ] && URL_SCHEME=https
-DOMAIN_HINT=$(grep -oE 'server_name [^;]+' nginx/zhixue.conf 2>/dev/null | head -1 || true)
 log "访问入口: $URL_SCHEME://<服务器地址>/  ($ENV 环境, 详情见 DEPLOY.md)"

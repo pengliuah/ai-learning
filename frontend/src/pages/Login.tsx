@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { BookOpen } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
+import { Starfield } from "../components/Starfield";
 
 export function Login() {
   const navigate = useNavigate();
@@ -28,68 +29,92 @@ export function Login() {
   };
 
   return (
-    <div className="flex min-h-[calc(100dvh-3rem)] items-center justify-center px-4">
-      <form
-        onSubmit={onSubmit}
-        className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800"
-      >
-        <div className="mb-6 flex flex-col items-center gap-2">
-          <div className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-gray-100">
-            <BookOpen className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-            智学助手
-          </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400">登录后继续学习</p>
+    <div className="relative min-h-dvh overflow-hidden bg-[#0b1026]">
+      {/* 全屏星空 */}
+      <Starfield className="absolute inset-0 h-full w-full" />
+      {/* 底部星空渐变，增强纵深 */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#141b3d]" />
+
+      <div className="relative flex min-h-dvh items-center justify-center px-4 md:justify-end md:pr-[9%]">
+        {/* 左侧标语（仅宽屏） */}
+        <div className="pointer-events-none absolute left-[9%] hidden max-w-md select-none lg:block">
+          <p className="text-3xl font-semibold leading-relaxed text-white/90">
+            探索星空
+            <span className="mx-3 inline-block animate-pulse">✨</span>
+            点亮学习之旅
+          </p>
+          <p className="mt-4 text-sm leading-6 text-white/50">
+            每一个学习目标，都是一颗待点亮的星。
+            <br />
+            登录智学助手，让 AI 教练陪你规划路径、生成内容、
+            <br />
+            完成测验——把整片星空逐一点亮。
+          </p>
         </div>
 
-        <div className="space-y-4">
-          <div>
-            <label htmlFor="login-username" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              用户名
-            </label>
-            <input
-              id="login-username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username"
-              autoFocus
-              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-              placeholder="输入用户名"
-            />
-          </div>
-          <div>
-            <label htmlFor="login-password" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              密码
-            </label>
-            <input
-              id="login-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-              placeholder="输入密码"
-            />
+        {/* 登录卡片：靠右 */}
+        <form
+          onSubmit={onSubmit}
+          className="w-full max-w-sm rounded-2xl border border-white/15 bg-white/10 p-6 shadow-2xl backdrop-blur-xl"
+        >
+          <div className="mb-6 flex flex-col items-center gap-2">
+            <div className="flex items-center gap-2 text-lg font-semibold text-white">
+              <BookOpen className="h-5 w-5 text-indigo-300" />
+              智学助手
+            </div>
+            <p className="text-sm text-white/60">登录，开始你的星空探索</p>
           </div>
 
-          {error && (
-            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
-              {error}
-            </p>
-          )}
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="login-username" className="mb-1 block text-sm font-medium text-white/80">
+                用户名
+              </label>
+              <input
+                id="login-username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+                autoFocus
+                className="w-full rounded-md border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-indigo-300 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                placeholder="输入用户名"
+              />
+            </div>
+            <div>
+              <label htmlFor="login-password" className="mb-1 block text-sm font-medium text-white/80">
+                密码
+              </label>
+              <input
+                id="login-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                className="w-full rounded-md border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 focus:border-indigo-300 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                placeholder="输入密码"
+              />
+            </div>
 
-          <button
-            type="submit"
-            disabled={!username.trim() || !password || submitting}
-            className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500 dark:hover:bg-indigo-600"
-          >
-            {submitting ? "登录中..." : "登录"}
-          </button>
-        </div>
+            {error && (
+              <p className="rounded-md border border-red-400/30 bg-red-500/20 px-3 py-2 text-sm text-red-200">
+                {error}
+              </p>
+            )}
 
-        <p className="mt-4 text-center text-xs text-gray-400">
-          没有账号？请联系管理员开通
-        </p>
-      </form>
+            <button
+              type="submit"
+              disabled={!username.trim() || !password || submitting}
+              className="w-full rounded-md bg-indigo-500 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-indigo-900/40 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting ? "登录中..." : "进入星空"}
+            </button>
+          </div>
+
+          <p className="mt-4 text-center text-xs text-white/40">
+            没有账号？请联系管理员开通
+          </p>
+        </form>
+      </div>
     </div>
   );
 }

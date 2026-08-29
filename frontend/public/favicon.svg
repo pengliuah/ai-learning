@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- 智学助手 favicon：微笑小书本 -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#818cf8"/>
+      <stop offset="1" stop-color="#4f46e5"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 圆角底 -->
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#bg)"/>
+
+  <!-- 小星星点缀 -->
+  <path d="M53 9 l1.3 2.8 2.8 1.3 -2.8 1.3 -1.3 2.8 -1.3 -2.8 -2.8 -1.3 2.8 -1.3 Z" fill="#fde68a"/>
+
+  <!-- 翻开的书 -->
+  <path d="M32 21
+           C26 14.5, 15 14.5, 9 17.5
+           V44.5
+           C15 41.5, 26 41.5, 32 48
+           C38 41.5, 49 41.5, 55 44.5
+           V17.5
+           C49 14.5, 38 14.5, 32 21 Z"
+        fill="#ffffff"/>
+  <!-- 书脊 -->
+  <path d="M32 21 V48" stroke="#c7d2fe" stroke-width="2.4" stroke-linecap="round"/>
+
+  <!-- 表情：眼睛 + 微笑 + 腮红 -->
+  <circle cx="22.5" cy="29.5" r="2.4" fill="#4b5563"/>
+  <circle cx="41.5" cy="29.5" r="2.4" fill="#4b5563"/>
+  <path d="M26.5 34 Q32 38.5 37.5 34" stroke="#4b5563" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+  <ellipse cx="17.5" cy="33.5" rx="3" ry="2" fill="#fbcfe8"/>
+  <ellipse cx="46.5" cy="33.5" rx="3" ry="2" fill="#fbcfe8"/>
+</svg>

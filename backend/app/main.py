@@ -792,7 +792,15 @@ if _frontend_dist.exists():
 
     @app.get("/{full_path:path}")
     def spa_fallback(full_path: str):
-        """非 API 路径返回 index.html，交给前端路由处理 (SPA)。"""
+        """非 API 路径优先返回 dist 里的同名静态文件（如 favicon.svg），
+        否则返回 index.html，交给前端路由处理 (SPA)。"""
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="not found")
+        candidate = (_frontend_dist / full_path).resolve()
+        if (
+            full_path
+            and candidate.is_file()
+            and candidate.is_relative_to(_frontend_dist.resolve())
+        ):
+            return FileResponse(candidate)
         return FileResponse(_frontend_dist / "index.html")

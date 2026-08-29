@@ -28,5 +28,5 @@ def build_chat_model(user_id: str, **kwargs) -> ChatOpenAI:
     return ChatOpenAI(**params)
 
 
-def build_streaming_model(**kwargs) -> ChatOpenAI:
-    return build_chat_model(streaming=True, **kwargs)
+def build_streaming_model(user_id: str, **kwargs) -> ChatOpenAI:
+    return build_chat_model(user_id, streaming=True, **kwargs)

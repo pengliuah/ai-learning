@@ -4,6 +4,7 @@ import logging
 import secrets
 import sys
 from contextvars import ContextVar
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -27,6 +28,14 @@ LOG_DATEFMT = "%Y-%m-%d %H:%M:%S"
 # Per-request client "ip:port". Set by AccessLogMiddleware around the whole
 # ASGI call so logs emitted inside endpoints (and SSE generators) carry it.
 client_addr_var: ContextVar[str] = ContextVar("client_addr", default="-")
+
+# 日志时间统一用东八区 (不依赖容器/系统 TZ 设置)
+_CST = timezone(timedelta(hours=8))
+
+
+def _cst_time(*args) -> datetime:
+    """logging.Formatter.converter: 把时间戳转成东八区。"""
+    return (datetime.fromtimestamp(args[0], tz=_CST) if args else datetime.now(_CST)).timetuple()
 
 
 class ClientContextFilter(logging.Filter):
@@ -74,7 +83,9 @@ if settings.admin_username == "admin" and settings.admin_password == "admin123":
 def _make_handler() -> logging.Handler:
     """A stderr handler with the unified format + client context filter."""
     handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=LOG_DATEFMT))
+    formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATEFMT)
+    formatter.converter = _cst_time  # type: ignore[assignment]
+    handler.setFormatter(formatter)
     handler.addFilter(ClientContextFilter())
     return handler
 

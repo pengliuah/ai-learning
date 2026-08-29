@@ -57,7 +57,7 @@ export function ModelSettings() {
       <section className="mb-6 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">API 连接配置</h2>
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          对当前账号生效，用于本账号的所有 AI 生成任务。未填写时回退到服务器环境变量配置。
+          对当前账号生效，用于本账号的所有 AI 生成任务。配置只保存在数据库中；未配置时 AI 生成功能不可用。
         </p>
 
         <label className="mt-3 block text-xs font-medium text-gray-600 dark:text-gray-300">

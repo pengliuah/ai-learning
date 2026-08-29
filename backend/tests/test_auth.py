@@ -135,6 +135,11 @@ def test_settings_isolated_between_users(client, admin_user, normal_user, user_c
     user_login = _login(client, user_credentials).json()
     uh = {"Authorization": f"Bearer {user_login['access_token']}"}
 
+    # A user with nothing saved sees empty values, NOT env-var fallbacks.
+    fresh = client.get("/api/settings/model", headers=uh).json()
+    assert fresh["apiKey"] == ""
+    assert fresh["model"] == ""
+
     # Each user writes their own model settings.
     r_user = client.put(
         "/api/settings/model",

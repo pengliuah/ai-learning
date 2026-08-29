@@ -20,14 +20,13 @@ from .auth import (
     create_access_token,
     create_refresh_token,
     get_current_user,
-    get_current_user_optional,
     hash_password,
     require_admin,
     revoke_refresh_token,
     rotate_refresh_token,
     verify_password,
 )
-from .config import BACKEND_DIR, settings
+from .config import BACKEND_DIR
 from .middleware import AccessLogMiddleware
 from .schemas import (
     AdminCreateUserRequest,
@@ -78,13 +77,8 @@ def _user_public(user: dict) -> dict:
     }
 
 
-def is_configured() -> bool:
-    """Deployment-level LLM readiness (env vars) for anonymous /api/health."""
-    return store.is_llm_configured()
-
-
 def is_configured_for_user(user_id: str) -> bool:
-    """Whether the user's effective LLM config has an API key."""
+    """Whether the user's saved model config has an API key."""
     return store.is_llm_configured_for_user(user_id)
 
 
@@ -111,31 +105,27 @@ def _get_module(doc, module_id: str):
 
 
 @app.get("/api/health")
-def health(user: dict | None = Depends(get_current_user_optional)):
-    """健康检查。
+def health(user: dict = Depends(get_current_user)):
+    """健康检查（需登录，按当前用户判定）。
 
-    探测后端是否就绪、是否已配置模型 API Key。不调用任何 LLM，
-    可直接用于存活/就绪探针（liveness/readiness probe）。
-
-    认证可选：带有效 token 时按该用户的模型设置判定 configured；
-    匿名调用（未登录/无效 token）按部署级环境变量判定。
+    探测后端是否就绪、当前用户是否已配置模型 API Key。不调用任何 LLM。
+    模型配置只存数据库，健康状态因人而异，因此本端点要求登录。
 
     返回:
         200 ``{"configured": bool, "model": str}``
 
-        - ``configured``: 是否已设置模型 API Key；为 false 时，
-          所有需要 LLM 的生成端点会返回 503。
-        - ``model``: 当前生效的模型名（网页模型设置优先，其次环境变量，
-          默认 ``doubao-1.5-pro-32k``，可填推理端点 ID 如 ``ep-xxx``）。
+        - ``configured``: 当前用户是否已在「模型设置」保存 API Key；
+          为 false 时，所有需要 LLM 的生成端点会返回 503。
+        - ``model``: 该用户配置的模型名（未配置为空串）。
+
+    错误:
+        401: 未登录。
     """
-    if user is not None:
-        try:
-            _, model, _, _ = store.get_llm_config(str(user["id"]))
-            return {"configured": store.is_llm_configured_for_user(str(user["id"])), "model": model}
-        except Exception:
-            model = settings.ark_model
-            return {"configured": False, "model": model}
-    return {"configured": is_configured(), "model": settings.ark_model}
+    try:
+        _, model, _, _ = store.get_llm_config(str(user["id"]))
+        return {"configured": is_configured_for_user(str(user["id"])), "model": model}
+    except Exception:
+        return {"configured": False, "model": ""}
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +284,7 @@ def create_plan(req: PlanCreateRequest, user: dict = Depends(get_current_user)):
         ``updatedAt``、``source``、``plan``（含 ``modules`` 列表）。
 
     错误:
-        - 503: 未配置 ``ARK_API_KEY``。
+        - 503: 未在「模型设置」配置模型 API Key。
         - 502: LLM 或结构化输出失败（已内置一次重试）。
     """
     _require_configured(str(user["id"]))
@@ -393,7 +383,7 @@ async def generate_content(plan_id: str, module_id: str, user: dict = Depends(ge
     说明: 前端应累积 delta 拼接为正文，收到 done 后用其刷新整份文档状态。
 
     错误:
-        - 503: 未配置 ``ARK_API_KEY``（生成前拦截）。
+        - 503: 未在「模型设置」配置模型 API Key（生成前拦截）。
         - 404: 计划或模块不存在。
         - 流中 error 事件: 生成或持久化失败。
     """
@@ -461,7 +451,7 @@ def generate_quiz(plan_id: str, module_id: str, user: dict = Depends(get_current
         200 ``Document``: 更新后的完整计划文档（该模块含 ``quiz``）。
 
     错误:
-        - 503: 未配置 ``ARK_API_KEY``。
+        - 503: 未在「模型设置」配置模型 API Key。
         - 404: 计划或模块不存在。
         - 502: LLM 或结构化输出失败（已内置一次重试）。
     """
@@ -578,7 +568,7 @@ def grade_quiz(plan_id: str, module_id: str, user: dict = Depends(get_current_us
         且 ``status`` 为 ``completed``）。
 
     错误:
-        - 503: 未配置 ``ARK_API_KEY``。
+        - 503: 未在「模型设置」配置模型 API Key。
         - 404: 计划/模块不存在，或该模块尚未生成测验。
         - 400: 没有已保存作答（需先 ``PUT .../answers``）。
         - 502: LLM 或结构化输出失败（已内置一次重试）。
@@ -661,7 +651,7 @@ async def coach_stream(req: CoachRequest, user: dict = Depends(get_current_user)
     可用于在 UI 展示「正在调用 quizzer」等过程。最终结论以 delta 累积为准。
 
     错误:
-        - 503: 未配置 ``ARK_API_KEY``。
+        - 503: 未在「模型设置」配置模型 API Key。
         - 流中 error 事件: 运行失败。
     """
     _require_configured(str(user["id"]))
@@ -727,10 +717,15 @@ def put_regen_settings(req: GenSettingsUpdate, user: dict = Depends(get_current_
 
 @app.get("/api/settings/model")
 def get_model_settings(user: dict = Depends(get_current_user)):
-    """读取当前用户的模型设置（网页配置优先，环境变量回退）。"""
-    api_key, model, base_url, max_tokens = store.get_llm_config(str(user["id"]))
+    """读取当前用户在库里保存的模型设置（原样返回，不做环境变量回退）。
+
+    只返回该用户在数据库中保存的值：空字段表示未配置，
+    不会用任何默认值填充，避免误把部署级配置当成个人配置。
+    """
+    row = store.get_model_settings_row(str(user["id"]))
     return ModelSettings(
-        apiKey=api_key, model=model, baseUrl=base_url, maxTokens=max_tokens
+        apiKey=row["api_key"], model=row["model"],
+        baseUrl=row["base_url"], maxTokens=row["max_tokens"],
     )
 
 
@@ -750,10 +745,8 @@ def put_model_settings(req: ModelSettingsUpdate, user: dict = Depends(get_curren
     logger.info("put_model_settings: updated (key set=%s, model set=%s)",
                 bool(row["api_key"]), bool(row["model"]))
     return ModelSettings(
-        apiKey=row["api_key"] or settings.ark_api_key or "",
-        model=row["model"] or settings.ark_model,
-        baseUrl=row["base_url"] or settings.ark_base_url,
-        maxTokens=row["max_tokens"] or settings.ark_max_tokens,
+        apiKey=row["api_key"], model=row["model"],
+        baseUrl=row["base_url"], maxTokens=row["max_tokens"],
     )
 
 

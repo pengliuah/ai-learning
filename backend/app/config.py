@@ -14,9 +14,6 @@ load_dotenv()
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BACKEND_DIR / "data"
 
-ARK_BASE_URL_DEFAULT = "https://ark.cn-beijing.volces.com/api/v3"
-ARK_MODEL_DEFAULT = "doubao-1.5-pro-32k"
-ARK_MAX_TOKENS_DEFAULT = 8192
 DATABASE_URL_DEFAULT = ""  # e.g. postgresql://user:pass@host:5432/zhixue
 
 # Unified log format, e.g.:
@@ -43,13 +40,8 @@ class ClientContextFilter(logging.Filter):
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore", case_sensitive=False)
 
-    # LLM connection: the primary source is the model_settings DB row
-    # (configured on the web "模型设置" page); these env vars only serve
-    # as fallback/seed for fields left empty in the database.
-    ark_api_key: str | None = None
-    ark_base_url: str = ARK_BASE_URL_DEFAULT
-    ark_model: str = ARK_MODEL_DEFAULT
-    ark_max_tokens: int = ARK_MAX_TOKENS_DEFAULT
+    # NOTE: 模型 (LLM) 连接配置不在这里——它按用户存在数据库
+    # user_model_settings 表（网页「模型设置」页），环境变量不是配置来源。
     log_level: str = "INFO"
     database_url: str = DATABASE_URL_DEFAULT
 

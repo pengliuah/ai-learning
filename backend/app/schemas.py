@@ -182,7 +182,7 @@ class GenSettingsUpdate(BaseModel):
 
 
 class ModelSettings(BaseModel):
-    """Effective LLM connection settings (DB values with ARK_* env fallback)."""
+    """当前用户保存在数据库里的模型连接设置（未配置字段为空）。"""
     apiKey: str = ""
     model: str = ""
     baseUrl: str = ""

@@ -15,7 +15,7 @@ module, applies the callback, then syncs the module and all its child rows
 transaction.
 
 Settings (model / IMA / generation strategy) are per-user tables keyed by
-``user_id``; empty fields fall back to ARK_* env vars. User accounts and
+``user_id``; the database is the single source of truth. User accounts and
 refresh tokens are managed here too (used by ``auth.py`` and the routes).
 """
 
@@ -30,7 +30,7 @@ from typing import Callable
 from psycopg import errors as psycopg_errors
 from psycopg.types.json import Jsonb
 
-from .config import DATA_DIR, settings
+from .config import DATA_DIR
 from .db import db_conn
 from .schemas import (
     Assessment,
@@ -619,38 +619,28 @@ def update_model_settings(
 
 
 def get_llm_config(user_id: str) -> tuple[str, str, str, int]:
-    """Effective LLM config ``(api_key, model, base_url, max_tokens)``.
+    """The user's LLM config ``(api_key, model, base_url, max_tokens)``.
 
-    Non-empty values saved by the user (web UI) win; empty fields fall back
-    to the ARK_* environment variables / built-in defaults.
+    Single source of truth is the user's ``user_model_settings`` DB row
+    (configured on the web UI). No environment-variable fallback: an empty
+    ``api_key`` means the user has not configured the model yet, and LLM
+    calls will be refused until they do.
     """
     row = get_model_settings_row(user_id)
-    api_key = row["api_key"] or settings.ark_api_key or ""
-    model = row["model"] or settings.ark_model
-    base_url = row["base_url"] or settings.ark_base_url
-    max_tokens = row.get("max_tokens") or settings.ark_max_tokens
-    return api_key, model, base_url, max_tokens
-
-
-def is_llm_configured() -> bool:
-    """True when an LLM API key is available from env vars.
-
-    Anonymous fallback for ``/api/health``: per-user configuration cannot be
-    checked without auth, so this reports deployment-level (env) readiness.
-    Falls back to False safely when the database is unreachable.
-    """
-    try:
-        return bool(settings.ark_api_key)
-    except Exception:
-        return False
+    return (
+        row["api_key"],
+        row["model"],
+        row["base_url"],
+        row.get("max_tokens") or 8192,
+    )
 
 
 def is_llm_configured_for_user(user_id: str) -> bool:
-    """True when an LLM API key is available (user row first, env fallback)."""
+    """True when the user has saved a model API key in the database."""
     try:
         return bool(get_llm_config(user_id)[0])
     except Exception:
-        return bool(settings.ark_api_key)
+        return False
 
 
 # ---------------------------------------------------------------------------

@@ -14,7 +14,7 @@ def test_health_configured(client):
     assert r.status_code == 200
     body = r.json()
     assert body["configured"] is True
-    assert body["model"]
+    assert "model" in body  # 用户未配置模型名时为空串，字段始终存在
 
 
 def test_health_unconfigured(unconfigured_client):

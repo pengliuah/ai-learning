@@ -133,20 +133,4 @@ async def require_admin(user: dict[str, Any] = Depends(get_current_user)) -> dic
     return user
 
 
-async def get_current_user_optional(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-) -> dict[str, Any] | None:
-    """Like ``get_current_user`` but returns None instead of 401 when there
-    is no (valid) token -- for endpoints callable both anonymously and
-    authenticated (e.g. /api/health)."""
-    if credentials is None:
-        return None
-    try:
-        payload = jwt.decode(credentials.credentials, settings.jwt_secret, algorithms=[_jwt_alg])
-    except jwt.InvalidTokenError:
-        return None
-    user = store.get_user(str(payload.get("sub")))
-    return user
-
-
 AuthRole = Literal["admin", "user"]

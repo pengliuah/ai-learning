@@ -9,8 +9,8 @@ def build_chat_model(user_id: str, **kwargs) -> ChatOpenAI:
     """ChatOpenAI pointed at the configured OpenAI-compatible endpoint.
 
     Connection settings come from the user's ``user_model_settings`` DB row
-    (saved via the web UI), with ARK_* environment variables as fallback for
-    empty fields. Extra ``kwargs`` override the effective config.
+    (saved via the web UI) -- the single source of truth. Raises when the
+    user has not configured an API key yet. Extra ``kwargs`` override.
     """
     api_key, model, base_url, max_tokens = store.get_llm_config(user_id)
     if not api_key:

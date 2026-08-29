@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 
 from . import store
-from .agent import LearningCoach
+from .agent import LearningCoach, _friendly_llm_error
 from .auth import (
     create_access_token,
     create_refresh_token,
@@ -394,23 +394,33 @@ async def generate_content(plan_id: str, module_id: str, user: dict = Depends(ge
 
     async def event_stream():
         nonlocal content
+        stream_error: Exception | None = None
         try:
             async for kind, payload in coach.author_content_stream(doc.plan, module, str(user["id"])):
                 if kind == "delta":
                     yield _sse("delta", {"delta": payload})
                 elif kind == "done":
                     content = payload
+        except Exception as exc:
+            stream_error = exc
 
+        # 成功、或中途失败但有部分内容时都持久化 (agent 会对部分内容发 done);
+        # 随后如有异常再发 error 事件, 前端提示失败但已生成的部分不丢。
+        if content is not None:
             def mutate(m):
                 m.content = content
                 if m.status == ModuleStatus.not_started:
                     m.status = ModuleStatus.studying
 
-            updated = store.update_module(plan_id, module_id, mutate, str(user["id"]))
-            logger.info("generate_content: ok module_id=%s chars=%d", module_id, len(content.markdown) if content else 0)
-            yield _sse("done", updated.model_dump(mode="json"))
-        except Exception as exc:
-            yield _sse("error", {"detail": str(exc)})
+            try:
+                updated = store.update_module(plan_id, module_id, mutate, str(user["id"]))
+                logger.info("generate_content: ok module_id=%s chars=%d", module_id, len(content.markdown) if content else 0)
+                yield _sse("done", updated.model_dump(mode="json"))
+            except Exception as exc:
+                stream_error = stream_error or exc
+
+        if stream_error is not None:
+            yield _sse("error", {"detail": _friendly_llm_error(stream_error)})
 
     content = None
     return StreamingResponse(event_stream(), media_type="text/event-stream")
@@ -663,7 +673,7 @@ async def coach_stream(req: CoachRequest, user: dict = Depends(get_current_user)
                 yield _sse(kind, payload)
             yield _sse("done", {"ok": True})
         except Exception as exc:
-            yield _sse("error", {"detail": str(exc)})
+            yield _sse("error", {"detail": _friendly_llm_error(exc)})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

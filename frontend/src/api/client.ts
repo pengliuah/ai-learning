@@ -83,6 +83,20 @@ function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+/** 从错误响应体中提取后端的 detail 信息（FastAPI 返回 {"detail": "..."}），
+ *  让流式请求失败时也能显示具体原因，而不是干巴巴的 "HTTP 503"。 */
+async function httpError(res: Response): Promise<Error> {
+  const raw = await res.text().catch(() => "");
+  let msg = raw;
+  try {
+    const body = JSON.parse(raw);
+    if (typeof body?.detail === "string") msg = body.detail;
+  } catch {
+    // 非 JSON 响应体, 保留原文
+  }
+  return new Error(msg || `HTTP ${res.status}`);
+}
+
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(API_BASE + url, {
     ...init,
@@ -230,7 +244,7 @@ export const api = {
         throw new Error("登录已过期，请重新登录");
       }
     }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw await httpError(res);
 
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
@@ -324,7 +338,7 @@ export const api = {
         throw new Error("登录已过期，请重新登录");
       }
     }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw await httpError(res);
 
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();

@@ -47,6 +47,41 @@ from .schemas import (
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# LLM 异常分类: 只对瞬时类错误重试; 所有异常转成用户可读的信息
+# ---------------------------------------------------------------------------
+
+import openai
+
+# 瞬时类错误 (值得重试): 超时 / 连接失败 / 服务端故障 / 限流
+_TRANSIENT_LLM_ERRORS = (
+    openai.APITimeoutError,
+    openai.APIConnectionError,
+    openai.InternalServerError,
+    openai.RateLimitError,
+)
+
+
+def _is_transient_llm_error(exc: BaseException) -> bool:
+    return isinstance(exc, _TRANSIENT_LLM_ERRORS)
+
+
+def _friendly_llm_error(exc: BaseException) -> str:
+    """把 openai/网络异常翻译成用户可读、可在设置页自行解决的提示。"""
+    if isinstance(exc, openai.AuthenticationError):
+        return "模型 API Key 无效或已过期，请在「模型设置」中检查"
+    if isinstance(exc, openai.NotFoundError):
+        return "模型名称不存在，请在「模型设置」中检查模型名或推理端点 ID"
+    if isinstance(exc, openai.PermissionDeniedError):
+        return "当前 API Key 无权限调用该模型，请检查模型设置"
+    if isinstance(exc, openai.RateLimitError):
+        return "模型调用触发频率/配额限制，请稍后重试"
+    if isinstance(exc, openai.APITimeoutError):
+        return "模型服务响应超时，请稍后重试"
+    if isinstance(exc, openai.APIConnectionError):
+        return "无法连接模型服务，请检查网络或 Base URL 配置"
+    return f"{type(exc).__name__}: {exc}"
+
 
 def _gen_strategy_suffix(gen_type: str, user_id: str) -> str:
     """Read the user's generation-strategy prompt for ``gen_type``.
@@ -167,9 +202,18 @@ class LearningCoach:
         try:
             result = graph.invoke(messages)
         except Exception as exc:
-            logger.warning("llm_invoke: agent=%s failed, retrying: %s", key, exc)
+            # 只对瞬时类错误 (超时/连接/限流/5xx) 重试一次;
+            # 鉴权失败、模型名错误等必然复现的错误直接失败, 不让用户白等。
+            if not _is_transient_llm_error(exc):
+                logger.error("llm_invoke: agent=%s failed (non-retryable): %s", key, exc)
+                raise RuntimeError(_friendly_llm_error(exc)) from exc
+            logger.warning("llm_invoke: agent=%s transient failure, retrying once: %s", key, exc)
             retry = user_text + "\n\n注意：上一次失败，请严格按结构化要求返回。"
-            result = graph.invoke({"messages": [HumanMessage(content=retry)]})
+            try:
+                result = graph.invoke({"messages": [HumanMessage(content=retry)]})
+            except Exception as retry_exc:
+                logger.error("llm_invoke: agent=%s retry failed: %s", key, retry_exc)
+                raise RuntimeError(_friendly_llm_error(retry_exc)) from retry_exc
         structured = result.get("structured_response")
         if structured is None:
             logger.error("llm_invoke: agent=%s produced no structured_response", key)
@@ -199,11 +243,23 @@ class LearningCoach:
         streaming = build_streaming_model(user_id)
         user = self._content_user(plan, module, user_id)
         parts: list[str] = []
-        async for chunk in streaming.astream([SystemMessage(content=CONTENT_SYSTEM), HumanMessage(content=user)]):
-            text = chunk.content
-            if isinstance(text, str) and text:
-                parts.append(text)
-                yield ("delta", text)
+        try:
+            async for chunk in streaming.astream([SystemMessage(content=CONTENT_SYSTEM), HumanMessage(content=user)]):
+                text = chunk.content
+                if isinstance(text, str) and text:
+                    parts.append(text)
+                    yield ("delta", text)
+        except Exception:
+            # 中途失败: 已流出的部分文本先作为 done 交给调用方持久化,
+            # 再把异常继续抛出 (调用方随后发 error 事件)。避免"流过的内容丢失"。
+            if parts:
+                partial_md, partial_kt = _split_key_takeaways("".join(parts))
+                logger.warning(
+                    "author_content: module=%s failed mid-stream, keeping %d partial chars",
+                    module.id, len(partial_md),
+                )
+                yield ("done", Content(markdown=partial_md, keyTakeaways=partial_kt))
+            raise
         full = "".join(parts)
         markdown, key_takeaways = _split_key_takeaways(full)
         logger.info("author_content: module=%s chars=%d keyTakeaways=%d", module.id, len(markdown), len(key_takeaways))

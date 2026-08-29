@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     # user_model_settings 表（网页「模型设置」页），环境变量不是配置来源。
     log_level: str = "INFO"
     database_url: str = DATABASE_URL_DEFAULT
+    # LLM 单次调用超时秒数: 上游挂起时避免 SSE 永久等待
+    llm_request_timeout: int = 180
 
     # Auth: JWT secret for access tokens. When unset, a random secret is
     # generated at startup -- restarts then invalidate all access tokens

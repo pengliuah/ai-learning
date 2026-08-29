@@ -33,15 +33,16 @@ from _factories import make_plan, make_quiz, make_result
 class FakeGraph:
     """Mimics a DeepAgents compiled graph: invoke -> {"structured_response": ...}."""
 
-    def __init__(self, response, fail_first: bool = False):
+    def __init__(self, response, fail_first: bool = False, exc: Exception | None = None):
         self.response = response
         self.fail_first = fail_first
+        self.exc = exc or RuntimeError("simulated LLM failure")
         self.calls = 0
 
     def invoke(self, messages):
         self.calls += 1
         if self.fail_first and self.calls == 1:
-            raise RuntimeError("simulated LLM failure")
+            raise self.exc
         return {"structured_response": self.response}
 
 
@@ -148,14 +149,39 @@ def test_grade_quiz_writes_student_answers_and_maxscore_fallback():
 
 # ----- retry -----
 
+def _transient_error() -> Exception:
+    """openai.APITimeoutError (构造需要 httpx.Request)。"""
+    import httpx
+    import openai
+    return openai.APITimeoutError(request=httpx.Request("POST", "https://llm.example/v1/chat/completions"))
+
+
+def _auth_error() -> Exception:
+    import httpx
+    import openai
+    resp = httpx.Response(401, request=httpx.Request("POST", "https://llm.example/v1/chat/completions"))
+    return openai.AuthenticationError("invalid api key", response=resp, body=None)
+
+
 def test_invoke_structured_retries_once():
+    """瞬时类错误 (超时/连接/限流): 重试一次。"""
     raw = make_quiz()
-    g = FakeGraph(raw, fail_first=True)
+    g = FakeGraph(raw, fail_first=True, exc=_transient_error())
     coach, _ = coach_with(quizzer=g)
     plan = make_plan(modules=1)
     quiz = coach.make_quiz(plan, plan.modules[0], "u1")
     assert quiz is raw
     assert g.calls == 2
+
+
+def test_invoke_structured_no_retry_on_auth_error():
+    """鉴权失败等必然复现的错误: 不重试, 直接失败并带用户可读信息。"""
+    g = FakeGraph(make_quiz(), fail_first=True, exc=_auth_error())
+    coach, _ = coach_with(quizzer=g)
+    plan = make_plan(modules=1)
+    with pytest.raises(RuntimeError, match="模型 API Key 无效"):
+        coach.make_quiz(plan, plan.modules[0], "u1")
+    assert g.calls == 1
 
 
 # ----- content streaming -----

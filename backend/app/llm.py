@@ -3,6 +3,7 @@ from __future__ import annotations
 from langchain_openai import ChatOpenAI
 
 from . import store
+from .config import settings
 
 
 def build_chat_model(user_id: str, **kwargs) -> ChatOpenAI:
@@ -20,6 +21,7 @@ def build_chat_model(user_id: str, **kwargs) -> ChatOpenAI:
         "api_key": api_key,
         "base_url": base_url,
         "max_tokens": max_tokens,
+        "request_timeout": settings.llm_request_timeout,
         "streaming": False,
     }
     params.update(kwargs)

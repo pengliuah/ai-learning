@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 #
-# zhixue 自动部署脚本 (Linux, 测试环境)
-#
-# 测试环境: 不启用 SSL, 直接用 IP 访问 (http://<服务器IP>/)。
-#
-# 流程:
-#   1. 停掉旧容器 (zhixue + nginx)
-#   2. 备份 /opt/zhixue/docker-compose.yml 到 /opt (保留服务器自定义配置)
-#   3. 拉取最新代码到 /opt/zhixue (reset --hard 会还原仓库版 compose)
-#   4. 用 /opt 中的 compose 备份覆盖 /opt/zhixue/docker-compose.yml
-#   5. 构建新镜像并重启服务
+# zhixue 自动部署脚本 (Linux, 支持 测试/线上 双环境)
 #
 # 用法:
-#   sudo bash scripts/deploy.sh
+#   sudo bash scripts/deploy.sh test    # 测试环境: 纯 HTTP, IP 访问 (compose: docker-compose.test.yml)
+#   sudo bash scripts/deploy.sh prod    # 线上环境: HTTPS 域名证书 (compose: docker-compose.prod.yml)
 #
-# 首次运行前:
-#   - root 需能访问 git@github.com:pengliuah/zhixue.git (部署用 SSH key 放在 /root/.ssh)
-#   - 编辑 /opt/zhixue/docker-compose.yml 填入 ARK_API_KEY
+# 流程:
+#   1. 停掉旧容器
+#   2. 备份服务器上自定义的 compose / .env (保留服务器侧配置)
+#   3. 拉取最新代码到 /opt/zhixue
+#   4. 恢复自定义配置 (prod 额外校验证书文件存在)
+#   5. 构建镜像并启动, 轮询 /api/health 健康检查 (预期 401 = 后端活着且鉴权生效)
+#
+# 首次部署前 (见 DEPLOY.md):
+#   - root 能访问 git@github.com:pengliuah/zhixue.git (SSH key 放 /root/.ssh)
+#   - cp deploy.env.example .env && vi .env   # 设置 JWT_SECRET / ADMIN_PASSWORD / POSTGRES_PASSWORD
+#   - prod 还需把域名证书放入 nginx/ssl/ (两个文件, 见 DEPLOY.md)
 #
 set -euo pipefail
 
@@ -24,16 +24,25 @@ set -euo pipefail
 APP_DIR=${APP_DIR:-/opt/zhixue}
 REPO_URL=${REPO_URL:-git@github.com:pengliuah/zhixue.git}
 BRANCH=${BRANCH:-master}
-BACKUP_DIR=${BACKUP_DIR:-/opt}
 IMAGE=${IMAGE:-zhixue-zhixue}
+BACKUP_DIR=${BACKUP_DIR:-/opt}
 # ========================================
-
-COMPOSE_FILE="$APP_DIR/docker-compose.yml"
-BACKUP_FILE="$BACKUP_DIR/docker-compose.yml.bak"
 
 log()  { printf '\033[1;34m[deploy]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
 err()  { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; }
+
+usage() {
+  echo "用法: sudo bash scripts/deploy.sh test|prod"
+  exit 1
+}
+
+ENV=${1:-}
+[ "$ENV" = "test" ] || [ "$ENV" = "prod" ] || usage
+
+COMPOSE_FILE="docker-compose.$ENV.yml"
+CERT_PEM="nginx/ssl/www.ailearningagent.xyz.pem"
+CERT_KEY="nginx/ssl/www.ailearningagent.xyz.key"
 
 # 写 /opt 与调用 docker 都需要 root
 if [ "$(id -u)" -ne 0 ]; then
@@ -42,7 +51,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # 依赖检查
-for c in git docker; do
+for c in git docker curl; do
   command -v "$c" >/dev/null 2>&1 || { err "未找到命令: $c"; exit 1; }
 done
 docker compose version >/dev/null 2>&1 || { err "未找到 'docker compose' (需 Docker Compose v2)"; exit 1; }
@@ -59,24 +68,26 @@ else
   log "无残留容器, 跳过"
 fi
 
-# ---- 2. 备份 docker-compose.yml 到 /opt ----
-# 保存服务器上当前的自定义 compose 配置 (如已填入 ARK_API_KEY)。
-# 第 3 步 reset --hard 会把 compose 还原为仓库版本, 第 4 步用此备份覆盖回去。
-if [ -f "$COMPOSE_FILE" ]; then
-  ts=$(date +%Y%m%d-%H%M%S)
-  cp -a "$COMPOSE_FILE" "$BACKUP_DIR/docker-compose.yml.bak.$ts"   # 带时间戳归档 (第 4 步恢复后会清理)
-  cp -a "$COMPOSE_FILE" "$BACKUP_FILE"                             # 稳定副本, 第 4 步从此恢复
-  log "2/5 已备份 $COMPOSE_FILE -> $BACKUP_FILE (归档 .bak.$ts)"
+# ---- 2. 备份服务器自定义配置 (compose 与 .env) ----
+# git reset --hard 只覆盖跟踪文件; 这里备份的是服务器侧可能改过的文件。
+ts=$(date +%Y%m%d-%H%M%S)
+if [ -f "$APP_DIR/$COMPOSE_FILE" ]; then
+  cp -a "$APP_DIR/$COMPOSE_FILE" "$BACKUP_DIR/$COMPOSE_FILE.bak.$ts"
+  log "2/5 已备份 $COMPOSE_FILE -> $BACKUP_DIR/"
 else
   log "2/5 $COMPOSE_FILE 不存在 (首次部署?), 跳过备份"
 fi
+if [ -f "$APP_DIR/.env" ]; then
+  cp -a "$APP_DIR/.env" "$BACKUP_DIR/zhixue.env.bak.$ts"
+  log "2/5 已备份 .env -> $BACKUP_DIR/zhixue.env.bak.$ts"
+else
+  warn "$APP_DIR/.env 不存在 — 部署后将用 deploy.env.example 的默认值 (JWT_SECRET 为空, ADMIN_PASSWORD 为空!)"
+fi
 
-# ---- 3. 拉取最新代码到 /opt/zhixue ----
+# ---- 3. 拉取最新代码 ----
 log "3/5 拉取最新代码到 $APP_DIR"
 if [ -d "$APP_DIR/.git" ]; then
-  # fetch + reset --hard 刷新到 origin/$BRANCH.
-  # reset --hard 只覆盖跟踪文件, 保留 gitignored 持久状态 (backend/data 学习数据);
-  # 仓库自带的 docker-compose.yml 会被还原为版本库版本, 随后第 4 步用自定义备份覆盖。
+  # reset --hard 只覆盖跟踪文件; .env / nginx/ssl / backend/data 均被 gitignore, 不受影响
   git -C "$APP_DIR" fetch --all --prune
   git -C "$APP_DIR" reset --hard "origin/$BRANCH"
   log "已更新现有检出至 origin/$BRANCH"
@@ -89,22 +100,63 @@ else
   log "已克隆到 $APP_DIR"
 fi
 
-# ---- 4. 用 /opt 中的 compose 备份覆盖 /opt/zhixue/docker-compose.yml ----
-if [ -f "$BACKUP_FILE" ]; then
-  cp -a "$BACKUP_FILE" "$COMPOSE_FILE"
-  log "4/5 已恢复自定义 $COMPOSE_FILE <- $BACKUP_FILE"
-  # 恢复后清理 /opt 中所有 docker-compose.yml.bak* 备份文件 (含稳定副本与时间戳归档)
-  rm -f "$BACKUP_DIR"/docker-compose.yml.bak*
-  log "4/5 已清理备份文件 $BACKUP_DIR/docker-compose.yml.bak*"
-else
-  log "4/5 无备份可恢复 ($BACKUP_FILE 不存在), 使用仓库自带 compose 文件"
+# ---- 4. 恢复自定义配置 + 环境前置校验 ----
+if [ -f "$BACKUP_DIR/$COMPOSE_FILE.bak.$ts" ]; then
+  cp -a "$BACKUP_DIR/$COMPOSE_FILE.bak.$ts" "$APP_DIR/$COMPOSE_FILE"
+  log "4/5 已恢复自定义 $COMPOSE_FILE"
+fi
+if [ -f "$BACKUP_DIR/zhixue.env.bak.$ts" ]; then
+  cp -a "$BACKUP_DIR/zhixue.env.bak.$ts" "$APP_DIR/.env"
+  log "4/5 已恢复自定义 .env"
 fi
 
-# ---- 5. 构建新镜像并重启服务 ----
-log "5/5 构建镜像并启动服务"
-cd "$APP_DIR"
-docker compose build
-docker compose up -d
+if [ "$ENV" = "prod" ]; then
+  # 线上环境必须有证书, 否则 nginx 起不来
+  if [ ! -f "$APP_DIR/$CERT_PEM" ] || [ ! -f "$APP_DIR/$CERT_KEY" ]; then
+    err "线上环境缺少证书文件:"
+    err "  $APP_DIR/$CERT_PEM"
+    err "  $APP_DIR/$CERT_KEY"
+    err "请把阿里云下载的 Nginx 证书放入 nginx/ssl/ 后重试 (见 DEPLOY.md)"
+    exit 1
+  fi
+  log "4/5 证书文件校验通过"
+fi
 
-log "部署完成, 当前容器状态:"
-docker compose ps
+# JWT_SECRET 为空时给出提醒 (功能可用, 但重启会踢掉所有登录态)
+if [ -f "$APP_DIR/.env" ] && grep -qE '^JWT_SECRET=\s*$' "$APP_DIR/.env"; then
+  warn "JWT_SECRET 未设置: 每次重启后所有用户需重新登录, 建议在 .env 中配置"
+fi
+
+# ---- 5. 构建镜像并启动, 健康检查 ----
+log "5/5 构建镜像并启动服务 ($ENV)"
+cd "$APP_DIR"
+docker compose -f "$COMPOSE_FILE" build
+docker compose -f "$COMPOSE_FILE" up -d
+
+# 健康检查: /api/health 需登录, 401 即代表 nginx→后端→DB 链路活着且鉴权生效
+log "健康检查: 轮询 http://127.0.0.1/api/health (预期 401)..."
+ok=""
+for i in $(seq 1 30); do
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1/api/health || true)
+  if [ "$code" = "401" ]; then
+    ok=1
+    break
+  fi
+  sleep 2
+done
+
+if [ -n "$ok" ]; then
+  log "健康检查通过 (401): 服务已就绪"
+else
+  err "健康检查未通过 (最后状态码: ${code:-无})。排查:"
+  err "  docker compose -f $COMPOSE_FILE ps"
+  err "  docker compose -f $COMPOSE_FILE logs zhixue"
+  exit 1
+fi
+
+log "部署完成 ($ENV), 当前容器状态:"
+docker compose -f "$COMPOSE_FILE" ps
+URL_SCHEME=http
+[ "$ENV" = "prod" ] && URL_SCHEME=https
+DOMAIN_HINT=$(grep -oE 'server_name [^;]+' nginx/zhixue.conf 2>/dev/null | head -1 || true)
+log "访问入口: $URL_SCHEME://<服务器地址>/  ($ENV 环境, 详情见 DEPLOY.md)"

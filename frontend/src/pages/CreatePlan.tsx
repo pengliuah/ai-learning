@@ -23,7 +23,7 @@ export function CreatePlan() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto w-full max-w-2xl">
       <button
         onClick={() => navigate("/")}
         className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"

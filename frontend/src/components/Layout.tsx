@@ -1,14 +1,16 @@
 import { Link } from "react-router-dom";
-import { BookOpen, Sun, Moon, Bot, Settings } from "lucide-react";
+import { BookOpen, Sun, Moon, Bot, Settings, Users, LogOut } from "lucide-react";
 import { HealthBanner } from "./HealthBanner";
 import { useTheme } from "../hooks/useTheme";
+import { useAuth } from "../auth/AuthContext";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { theme, toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+    <div className="flex h-dvh flex-col">
+      <header className="shrink-0 border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
         <div className="mx-auto flex h-12 max-w-5xl items-center gap-2 px-4">
           <Link to="/" className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
             <BookOpen className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
@@ -23,6 +25,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </Link>
 
           <div className="ml-auto flex items-center gap-1">
+            {user?.role === "admin" && (
+              <Link
+                to="/admin/users"
+                className="inline-flex items-center gap-1.5 rounded p-1.5 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                title="用户管理"
+              >
+                <Users className="h-4 w-4" />
+              </Link>
+            )}
             <button
               onClick={toggleTheme}
               className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
@@ -37,11 +48,27 @@ export function Layout({ children }: { children: React.ReactNode }) {
             >
               <Settings className="h-4 w-4" />
             </Link>
+            {user && (
+              <span className="flex items-center gap-1 pl-1 text-sm text-gray-500 dark:text-gray-400">
+                <span className="max-w-24 truncate" title={user.username}>{user.username}</span>
+                <button
+                  onClick={() => logout()}
+                  className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                  title="退出登录"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </span>
+            )}
           </div>
         </div>
       </header>
-      <HealthBanner />
-      <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+      <div className="shrink-0">
+        <HealthBanner />
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6">{children}</main>
+      </div>
     </div>
   );
 }

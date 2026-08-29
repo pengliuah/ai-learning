@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Send, Loader2, AlertCircle, ArrowRight, ClipboardList, Search, Trash2 } from "lucide-react";
 import { Markdown } from "../components/Markdown";
 import { api } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import type { ChatTurn, PlanListItem } from "../api/types";
 
 const TOOL_LABELS: Record<string, string> = {
@@ -30,7 +31,10 @@ const EXAMPLES = [
   "讲解一下闭包的概念",
 ];
 
-const STORAGE_KEY = "zhixue_coach_messages";
+/** 聊天历史按用户隔离：不同账号互不可见。 */
+function storageKey(userId: string | undefined) {
+  return userId ? `zhixue_coach_messages_${userId}` : "zhixue_coach_messages_anonymous";
+}
 
 function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -103,9 +107,10 @@ function ToolCard({ tool, navigate }: { tool: ToolEvent; navigate: ReturnType<ty
 
 export function Coach() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const stored = localStorage.getItem(storageKey(user?.id));
       return stored ? JSON.parse(stored) : [];
     } catch {
       return [];
@@ -121,9 +126,9 @@ export function Coach() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+      localStorage.setItem(storageKey(user?.id), JSON.stringify(messages));
     } catch {}
-  }, [messages]);
+  }, [messages, user?.id]);
 
   // Auto-send a prefilled goal from ?goal= query param.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -203,7 +208,7 @@ export function Coach() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Header */}
       <div className="mb-3 flex items-center gap-3">
         <button

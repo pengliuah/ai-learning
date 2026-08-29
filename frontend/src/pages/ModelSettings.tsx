@@ -40,7 +40,7 @@ export function ModelSettings() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto w-full max-w-2xl">
       <button
         onClick={() => navigate(-1)}
         className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
@@ -57,7 +57,7 @@ export function ModelSettings() {
       <section className="mb-6 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">API 连接配置</h2>
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          全局生效，用于所有 AI 生成任务。当前生效的模型在首页可见。
+          对当前账号生效，用于本账号的所有 AI 生成任务。未填写时回退到服务器环境变量配置。
         </p>
 
         <label className="mt-3 block text-xs font-medium text-gray-600 dark:text-gray-300">

@@ -355,9 +355,10 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey }: Annot
   };
 
   const handleCreate = () => {
-    if (!bubble) return;
+    // bubble 在打开编辑卡时已被置空，锚点要从 editor 里取
+    if (editor?.kind !== "new") return;
     createMutation.mutate(
-      { ...bubble.anchor, note: draft.trim() },
+      { ...editor.anchor, note: draft.trim() },
       {
         onSuccess: () => {
           toast("批注已添加", "success");

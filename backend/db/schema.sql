@@ -255,3 +255,21 @@ CREATE TABLE user_model_settings (
 CREATE TRIGGER user_model_settings_set_updated_at
     BEFORE UPDATE ON user_model_settings
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- token_usage  -  per-user LLM token 用量统计
+--
+-- 每次 LLM 调用成功后写入一行 (按用户), 用于「模型设置」页展示
+-- 今日 / 本月 / 累计的 token 消耗与请求次数。不涉及计费, 仅作统计。
+-- ---------------------------------------------------------------------------
+CREATE TABLE token_usage (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    gen_type      TEXT NOT NULL DEFAULT '',
+    model         TEXT NOT NULL DEFAULT '',
+    input_tokens  INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens  INTEGER NOT NULL DEFAULT 0,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_token_usage_user_created ON token_usage (user_id, created_at);

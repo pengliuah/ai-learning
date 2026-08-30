@@ -760,6 +760,12 @@ def put_model_settings(req: ModelSettingsUpdate, user: dict = Depends(get_curren
     )
 
 
+@app.get("/api/usage/summary")
+def usage_summary(user: dict = Depends(get_current_user)):
+    """当前用户的 LLM token 用量统计（今日 / 本月 / 累计，东八区）。"""
+    return store.get_usage_summary(str(user["id"]))
+
+
 @app.post("/api/plans/{plan_id}/save-to-ima")
 def save_to_ima(plan_id: str, req: SaveToImaRequest, user: dict = Depends(get_current_user)):
     """将计划或模块内容保存到 IMA 笔记。

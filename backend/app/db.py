@@ -145,6 +145,24 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
         conn.execute("CREATE INDEX idx_refresh_tokens_user ON refresh_tokens (user_id)")
         logger.info("init_schema: refresh_tokens table added")
 
+    if not conn.execute("SELECT to_regclass('public.token_usage')").fetchone()[0]:
+        conn.execute(
+            """CREATE TABLE token_usage (
+                   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                   user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                   gen_type      TEXT NOT NULL DEFAULT '',
+                   model         TEXT NOT NULL DEFAULT '',
+                   input_tokens  INTEGER NOT NULL DEFAULT 0,
+                   output_tokens INTEGER NOT NULL DEFAULT 0,
+                   total_tokens  INTEGER NOT NULL DEFAULT 0,
+                   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+               )"""
+        )
+        conn.execute(
+            "CREATE INDEX idx_token_usage_user_created ON token_usage (user_id, created_at)"
+        )
+        logger.info("init_schema: token_usage table added")
+
     for table, ddl, trigger in (
         ("user_ima_settings", """CREATE TABLE user_ima_settings (
                user_id           UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

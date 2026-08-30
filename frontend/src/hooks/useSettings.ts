@@ -1,12 +1,20 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate } from "../api/types";
+import type { ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary } from "../api/types";
 
 export const SETTINGS_KEYS = {
   ima: ["settings", "ima"] as const,
   regen: ["settings", "regen"] as const,
   model: ["settings", "model"] as const,
+  usage: ["settings", "usage"] as const,
 };
+
+export function useUsageSummary() {
+  return useQuery({
+    queryKey: SETTINGS_KEYS.usage,
+    queryFn: () => api.getUsageSummary(),
+  });
+}
 
 export function useImaSettings() {
   return useQuery({

@@ -133,6 +133,19 @@ export interface ModelSettingsUpdate {
   maxTokens?: number | null;
 }
 
+export interface UsageStat {
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+export interface UsageSummary {
+  today: UsageStat;
+  month: UsageStat;
+  allTime: UsageStat;
+}
+
 export type SaveToImaContentType = "plan" | "content" | "quiz" | "result";
 
 export interface SaveToImaRequest {

@@ -131,3 +131,28 @@ def test_settings_are_per_user(tmp_store, admin_user, normal_user):
     assert store.get_ima_settings_row(admin_id)["ima_client_id"] == ""
     assert store.get_gen_settings_row(user_id)["plan"] == "自定义策略"
     assert store.get_gen_settings_row(admin_id)["plan"] == ""
+
+
+def test_token_usage_record_and_summary(tmp_store, admin_user, normal_user):
+    """Usage rows are per-user and aggregate into today/month/allTime."""
+    admin_id = str(admin_user["id"])
+    user_id = str(normal_user["id"])
+
+    store.record_token_usage(admin_id, "coach", 100, 20, 120, model="m1")
+    store.record_token_usage(admin_id, "plan", 200, 300, 500, model="m1")
+    store.record_token_usage(user_id, "coach", 10, 5, 15, model="m2")
+
+    s = store.get_usage_summary(admin_id)
+    assert s["today"]["requests"] == 2
+    assert s["today"]["inputTokens"] == 300
+    assert s["today"]["outputTokens"] == 320
+    assert s["today"]["totalTokens"] == 620
+    assert s["month"] == s["today"]  # fresh DB: nothing older than today
+    assert s["allTime"]["totalTokens"] == 620
+
+    u = store.get_usage_summary(user_id)
+    assert u["today"]["totalTokens"] == 15
+
+    # model 默认取用户配置 (未配置时为空串), 不抛异常
+    store.record_token_usage(user_id, "quiz", 1, 2, 3)
+    assert store.get_usage_summary(user_id)["today"]["requests"] == 2

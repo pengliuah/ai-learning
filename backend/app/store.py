@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from psycopg import errors as psycopg_errors
@@ -641,6 +641,71 @@ def is_llm_configured_for_user(user_id: str) -> bool:
         return bool(get_llm_config(user_id)[0])
     except Exception:
         return False
+
+
+# ---------------------------------------------------------------------------
+# Token usage (per-user LLM 用量统计)
+#
+# 每次 LLM 调用成功后由 agent 层写入一行, 供「模型设置」页展示
+# 今日 / 本月 / 累计的 token 消耗与请求次数。时间聚合按东八区。
+# ---------------------------------------------------------------------------
+
+_CST = timezone(timedelta(hours=8))
+
+
+def record_token_usage(
+    user_id: str,
+    gen_type: str,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    total_tokens: int = 0,
+    model: str | None = None,
+) -> None:
+    """Insert one usage row. ``model`` defaults to the user's configured model."""
+    if model is None:
+        try:
+            model = get_llm_config(user_id)[1] or ""
+        except Exception:
+            model = ""
+    with db_conn() as conn:
+        conn.execute(
+            """INSERT INTO token_usage
+                   (user_id, gen_type, model, input_tokens, output_tokens, total_tokens)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            (user_id, gen_type, model, input_tokens, output_tokens, total_tokens),
+        )
+
+
+def get_usage_summary(user_id: str) -> dict:
+    """Aggregated token usage for today / this month / all time (CST)."""
+    now = datetime.now(_CST)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    month_start = today_start.replace(day=1)
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+    def _sum(since: datetime) -> dict:
+        with db_conn() as conn:
+            row = conn.execute(
+                """SELECT COUNT(*) AS requests,
+                          COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                          COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                          COALESCE(SUM(total_tokens), 0) AS total_tokens
+                   FROM token_usage
+                   WHERE user_id = %s AND created_at >= %s""",
+                (user_id, since),
+            ).fetchone()
+        return {
+            "requests": int(row["requests"]),
+            "inputTokens": int(row["input_tokens"]),
+            "outputTokens": int(row["output_tokens"]),
+            "totalTokens": int(row["total_tokens"]),
+        }
+
+    return {
+        "today": _sum(today_start),
+        "month": _sum(month_start),
+        "allTime": _sum(epoch),
+    }
 
 
 # ---------------------------------------------------------------------------

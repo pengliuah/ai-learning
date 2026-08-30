@@ -83,6 +83,44 @@ def _friendly_llm_error(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
+# ---------------------------------------------------------------------------
+# Token 用量统计: 从 AIMessage.usage_metadata 汇总并按用户落库 (best-effort)
+# ---------------------------------------------------------------------------
+
+# _invoke_structured 的子代理 key -> token_usage.gen_type
+_USAGE_GEN_TYPE = {"planner": "plan", "quizzer": "quiz", "grader": "grade"}
+
+
+def _sum_usage(messages) -> dict | None:
+    """Sum ``usage_metadata`` across a result's messages (multi-call agent)."""
+    total = None
+    for msg in messages or []:
+        u = getattr(msg, "usage_metadata", None)
+        if not u:
+            continue
+        if total is None:
+            total = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        for k in total:
+            total[k] += int(u.get(k) or 0)
+    return total
+
+
+def _record_usage(user_id: str, gen_type: str, usage: dict | None) -> None:
+    """Persist one call's token usage; never disturbs the main flow."""
+    if not usage or not any(usage.get(k) for k in ("input_tokens", "output_tokens", "total_tokens")):
+        return
+    try:
+        store.record_token_usage(
+            user_id,
+            gen_type,
+            int(usage.get("input_tokens") or 0),
+            int(usage.get("output_tokens") or 0),
+            int(usage.get("total_tokens") or 0),
+        )
+    except Exception as exc:
+        logger.warning("record_token_usage failed (gen_type=%s): %s", gen_type, exc)
+
+
 def _gen_strategy_suffix(gen_type: str, user_id: str) -> str:
     """Read the user's generation-strategy prompt for ``gen_type``.
 
@@ -214,6 +252,8 @@ class LearningCoach:
             except Exception as retry_exc:
                 logger.error("llm_invoke: agent=%s retry failed: %s", key, retry_exc)
                 raise RuntimeError(_friendly_llm_error(retry_exc)) from retry_exc
+        # 统计本次调用的 token 用量 (agent 内部可能有多轮模型调用, 逐条累加)
+        _record_usage(user_id, _USAGE_GEN_TYPE.get(key, key), _sum_usage(result.get("messages")))
         structured = result.get("structured_response")
         if structured is None:
             logger.error("llm_invoke: agent=%s produced no structured_response", key)
@@ -243,8 +283,11 @@ class LearningCoach:
         streaming = build_streaming_model(user_id)
         user = self._content_user(plan, module, user_id)
         parts: list[str] = []
+        usage: dict | None = None
         try:
             async for chunk in streaming.astream([SystemMessage(content=CONTENT_SYSTEM), HumanMessage(content=user)]):
+                if getattr(chunk, "usage_metadata", None):
+                    usage = chunk.usage_metadata
                 text = chunk.content
                 if isinstance(text, str) and text:
                     parts.append(text)
@@ -259,10 +302,13 @@ class LearningCoach:
                     module.id, len(partial_md),
                 )
                 yield ("done", Content(markdown=partial_md, keyTakeaways=partial_kt))
+            # 中途失败也计入已消耗的用量
+            _record_usage(user_id, "content", usage)
             raise
         full = "".join(parts)
         markdown, key_takeaways = _split_key_takeaways(full)
         logger.info("author_content: module=%s chars=%d keyTakeaways=%d", module.id, len(markdown), len(key_takeaways))
+        _record_usage(user_id, "content", usage)
         yield ("done", Content(markdown=markdown, keyTakeaways=key_takeaways))
 
     @staticmethod
@@ -484,6 +530,7 @@ class LearningCoach:
         user = f"保存策略要求：\n{skill_prompt}\n\n待整理的学习内容：\n{content}"
         model = build_chat_model(user_id)
         result = model.invoke([SystemMessage(content=system), HumanMessage(content=user)])
+        _record_usage(user_id, "ima", getattr(result, "usage_metadata", None))
         text = result.content
         return text if isinstance(text, str) else str(text)
 
@@ -556,22 +603,34 @@ class LearningCoach:
         agent = self._build_chat_agent(user_id)
         messages = await self._build_coach_messages(goal, history, user_id)
         logger.info("coach_stream: goal=%s history=%d", goal[:100], len(history or []))
-        async for event in agent.astream_events(
-            {"messages": messages}, version="v2"
-        ):
-            kind = event.get("event")
-            if kind == "on_chat_model_stream":
-                chunk = event.get("data", {}).get("chunk")
-                text = getattr(chunk, "content", "") if chunk else ""
-                if isinstance(text, str) and text:
-                    yield ("delta", {"text": text})
-            elif kind == "on_tool_start":
-                yield ("tool", {"phase": "start", "name": event.get("name")})
-            elif kind == "on_tool_end":
-                output = event.get("data", {}).get("output", "")
-                if hasattr(output, "content"):
-                    output = output.content
-                yield ("tool", {"phase": "end", "name": event.get("name"), "output": str(output)})
+        # 一次对话可能触发多轮模型调用 (工具循环), 把每轮 usage chunk 累加,
+        # 无论流是否正常结束都在 finally 里落库。
+        total_usage: dict | None = None
+        try:
+            async for event in agent.astream_events(
+                {"messages": messages}, version="v2"
+            ):
+                kind = event.get("event")
+                if kind == "on_chat_model_stream":
+                    chunk = event.get("data", {}).get("chunk")
+                    if getattr(chunk, "usage_metadata", None):
+                        if total_usage is None:
+                            total_usage = dict(chunk.usage_metadata)
+                        else:
+                            for k in total_usage:
+                                total_usage[k] += int(chunk.usage_metadata.get(k) or 0)
+                    text = getattr(chunk, "content", "") if chunk else ""
+                    if isinstance(text, str) and text:
+                        yield ("delta", {"text": text})
+                elif kind == "on_tool_start":
+                    yield ("tool", {"phase": "start", "name": event.get("name")})
+                elif kind == "on_tool_end":
+                    output = event.get("data", {}).get("output", "")
+                    if hasattr(output, "content"):
+                        output = output.content
+                    yield ("tool", {"phase": "end", "name": event.get("name"), "output": str(output)})
+        finally:
+            _record_usage(user_id, "coach", total_usage)
 
 
 def _split_key_takeaways(text: str) -> tuple[str, list[str]]:

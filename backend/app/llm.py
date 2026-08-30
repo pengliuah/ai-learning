@@ -23,6 +23,9 @@ def build_chat_model(user_id: str, **kwargs) -> ChatOpenAI:
         "max_tokens": max_tokens,
         "request_timeout": settings.llm_request_timeout,
         "streaming": False,
+        # 流式时在最后一个 chunk 附带 usage_metadata (stream_options.include_usage),
+        # 供 agent 层统计 token 用量; 非流式调用不受影响。
+        "stream_usage": True,
     }
     params.update(kwargs)
     return ChatOpenAI(**params)

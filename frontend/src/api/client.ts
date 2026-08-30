@@ -1,4 +1,4 @@
-import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, SaveToImaRequest, SaveToImaResponse, User, AuthResponse, AdminUserCreateInput } from "./types";
+import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary, SaveToImaRequest, SaveToImaResponse, User, AuthResponse, AdminUserCreateInput } from "./types";
 
 /**
  * 后端 API 基址。
@@ -308,6 +308,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
+
+  getUsageSummary: () => json<UsageSummary>("/usage/summary"),
 
   saveToIma: (planId: string, data: SaveToImaRequest = {}) =>
     json<SaveToImaResponse>(`/plans/${planId}/save-to-ima`, {

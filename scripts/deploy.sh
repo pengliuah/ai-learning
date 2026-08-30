@@ -164,4 +164,8 @@ fi
 
 log "部署完成 ($ENV), 当前容器状态:"
 docker compose -f "$COMPOSE_FILE" ps
-log "访问入口: $URL_SCHEME://<服务器地址>/  ($ENV 环境, 详情见 DEPLOY.md)"
+if [ "$ENV" = "prod" ]; then
+  log "访问入口: https://www.ailearningagent.xyz/  (prod 环境, 详情见 DEPLOY.md)"
+else
+  log "访问入口: http://localhost/  (test 环境, 详情见 DEPLOY.md)"
+fi

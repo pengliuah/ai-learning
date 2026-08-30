@@ -193,3 +193,15 @@ export interface AdminUserCreateInput {
   role?: UserRole;
   email?: string | null;
 }
+
+export interface Annotation {
+  id: string;
+  planId: string;
+  moduleKey: string;
+  quote: string;
+  prefix: string;
+  suffix: string;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}

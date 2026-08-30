@@ -163,6 +163,31 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
         )
         logger.info("init_schema: token_usage table added")
 
+    if not conn.execute("SELECT to_regclass('public.annotations')").fetchone()[0]:
+        conn.execute(
+            """CREATE TABLE annotations (
+                   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                   user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                   plan_id    UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+                   module_key TEXT NOT NULL DEFAULT '',
+                   quote      TEXT NOT NULL,
+                   prefix     TEXT NOT NULL DEFAULT '',
+                   suffix     TEXT NOT NULL DEFAULT '',
+                   note       TEXT NOT NULL DEFAULT '',
+                   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+               )"""
+        )
+        conn.execute(
+            """CREATE TRIGGER annotations_set_updated_at
+               BEFORE UPDATE ON annotations
+               FOR EACH ROW EXECUTE FUNCTION set_updated_at()"""
+        )
+        conn.execute(
+            "CREATE INDEX idx_annotations_user_plan ON annotations (user_id, plan_id)"
+        )
+        logger.info("init_schema: annotations table added")
+
     for table, ddl, trigger in (
         ("user_ima_settings", """CREATE TABLE user_ima_settings (
                user_id           UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

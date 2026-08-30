@@ -5,6 +5,7 @@ The LLM is mocked (fake_coach); the store is isolated per test (tmp_store).
 from __future__ import annotations
 
 from _factories import make_plan, make_quiz, make_result
+from conftest import auth_headers
 
 
 # ----- health -----
@@ -232,3 +233,71 @@ def test_patch_module_invalid_status_422(client, seeded_doc):
     mid = seeded_doc.plan.modules[0].id
     assert client.patch(f"/api/plans/{seeded_doc.id}/modules/{mid}", json={"status": "bogus"}).status_code == 422
 
+
+
+def test_annotation_flow(client, seeded_doc):
+    """Create -> list -> update -> delete annotations via the API."""
+    doc = seeded_doc
+    mid = doc.plan.modules[0].id
+    base = f"/api/plans/{doc.id}/modules/{mid}/annotations"
+
+    r = client.post(base, json={"quote": "浮力公式", "prefix": "阿基米德：", "suffix": "是重点", "note": "考试必考"})
+    assert r.status_code == 200, r.text
+    anno = r.json()
+    assert anno["quote"] == "浮力公式" and anno["note"] == "考试必考"
+
+    r = client.get(base)
+    assert r.status_code == 200 and len(r.json()) == 1
+
+    r = client.put(f"/api/plans/{doc.id}/annotations/{anno['id']}", json={"note": "改了"})
+    assert r.status_code == 200 and r.json()["note"] == "改了"
+
+    r = client.delete(f"/api/plans/{doc.id}/annotations/{anno['id']}")
+    assert r.status_code == 200
+    assert client.get(base).json() == []
+
+
+def test_annotation_404s(client, seeded_doc, normal_user):
+    """Missing module/annotation and cross-user access all 404."""
+    doc = seeded_doc
+    mid = doc.plan.modules[0].id
+    base = f"/api/plans/{doc.id}/modules/{mid}/annotations"
+
+    # 模块不存在
+    r = client.post(f"/api/plans/{doc.id}/modules/nope/annotations", json={"quote": "x"})
+    assert r.status_code == 404
+
+    # 批注不存在
+    r = client.put(f"/api/plans/{doc.id}/annotations/does-not-exist", json={"note": "n"})
+    assert r.status_code == 404
+    r = client.delete(f"/api/plans/{doc.id}/annotations/does-not-exist")
+    assert r.status_code == 404
+
+    # 跨用户: normal_user 建的批注对 admin 计划不可见/不可改
+    other = client.post(
+        f"/api/plans/{doc.id}/modules/{mid}/annotations",
+        json={"quote": "x"}, headers=auth_headers(normal_user),
+    )
+    assert other.status_code == 404  # plan 不属于 normal_user
+
+
+def test_annotation_cross_user_isolation(client, seeded_doc, normal_user):
+    """A normal user cannot read or modify the admin's annotations."""
+    doc = seeded_doc
+    mid = doc.plan.modules[0].id
+    anno = client.post(
+        f"/api/plans/{doc.id}/modules/{mid}/annotations",
+        json={"quote": "管理员批注", "note": "admin only"},
+    ).json()
+
+    r = client.get(
+        f"/api/plans/{doc.id}/modules/{mid}/annotations",
+        headers=auth_headers(normal_user),
+    )
+    assert r.status_code == 404  # 计划本身就不属于 normal_user
+
+    r = client.put(
+        f"/api/plans/{doc.id}/annotations/{anno['id']}",
+        json={"note": "越权"}, headers=auth_headers(normal_user),
+    )
+    assert r.status_code == 404

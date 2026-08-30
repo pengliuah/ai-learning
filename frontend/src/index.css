@@ -12,3 +12,11 @@ body {
   font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC",
     "Source Han Sans SC", sans-serif;
 }
+
+/* 批注高亮（CSS Custom Highlight API，不修改 DOM） */
+::highlight(zhixue-anno) {
+  background-color: rgba(250, 204, 21, 0.4);
+}
+::highlight(zhixue-anno-active) {
+  background-color: rgba(245, 158, 11, 0.55);
+}

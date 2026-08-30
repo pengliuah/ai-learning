@@ -273,3 +273,28 @@ CREATE TABLE token_usage (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_token_usage_user_created ON token_usage (user_id, created_at);
+
+-- ---------------------------------------------------------------------------
+-- annotations  -  per-user 学习内容批注 (Word 式笔记)
+--
+-- 用户在模块学习内容中选中文字添加的批注。锚定用 (plan_id, module_key) +
+-- quote/prefix/suffix 三元组在渲染后 DOM 里重定位, 不 FK 到 modules.id
+-- (保存/重新生成计划会重建模块行、更换 UUID)。内容重新生成后找不到原文的
+-- 批注由前端标记为失效, 数据保留。
+-- ---------------------------------------------------------------------------
+CREATE TABLE annotations (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan_id    UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    module_key TEXT NOT NULL DEFAULT '',
+    quote      TEXT NOT NULL,
+    prefix     TEXT NOT NULL DEFAULT '',
+    suffix     TEXT NOT NULL DEFAULT '',
+    note       TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TRIGGER annotations_set_updated_at
+    BEFORE UPDATE ON annotations
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE INDEX idx_annotations_user_plan ON annotations (user_id, plan_id);

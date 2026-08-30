@@ -1,4 +1,4 @@
-import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary, SaveToImaRequest, SaveToImaResponse, User, AuthResponse, AdminUserCreateInput } from "./types";
+import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary, Annotation, SaveToImaRequest, SaveToImaResponse, User, AuthResponse, AdminUserCreateInput } from "./types";
 
 /**
  * 后端 API 基址。
@@ -310,6 +310,32 @@ export const api = {
     }),
 
   getUsageSummary: () => json<UsageSummary>("/usage/summary"),
+
+  listAnnotations: (planId: string, moduleId: string) =>
+    json<Annotation[]>(`/plans/${planId}/modules/${moduleId}/annotations`),
+
+  createAnnotation: (
+    planId: string,
+    moduleId: string,
+    data: { quote: string; prefix: string; suffix: string; note: string },
+  ) =>
+    json<Annotation>(`/plans/${planId}/modules/${moduleId}/annotations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  updateAnnotation: (planId: string, annotationId: string, note: string) =>
+    json<Annotation>(`/plans/${planId}/annotations/${annotationId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note }),
+    }),
+
+  deleteAnnotation: (planId: string, annotationId: string) =>
+    json<{ deleted: string }>(`/plans/${planId}/annotations/${annotationId}`, {
+      method: "DELETE",
+    }),
 
   saveToIma: (planId: string, data: SaveToImaRequest = {}) =>
     json<SaveToImaResponse>(`/plans/${planId}/save-to-ima`, {

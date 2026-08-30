@@ -7,6 +7,7 @@ import {
   BookmarkPlus, Settings,
 } from "lucide-react";
 import { Markdown } from "../components/Markdown";
+import { Annotations } from "../components/Annotations";
 import { ActionBar } from "../components/ActionBar";
 import { ActionDropdown } from "../components/ActionDropdown";
 import { useToast } from "../components/Toast";
@@ -28,6 +29,8 @@ export function ModuleDetail() {
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState("");
   const [streamError, setStreamError] = useState("");
+  // 批注作用的内容容器（正文 + 关键要点）
+  const contentAreaRef = useRef<HTMLDivElement | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   // answersRef mirrors the latest answers so the debounced autosave always
   // persists the most recent value (avoids the stale-closure that made the
@@ -218,23 +221,31 @@ export function ModuleDetail() {
               )}
 
               {hasContent && !streaming && (
-                <div>
-                  <div className="prose prose-sm max-w-none dark:prose-invert">
-                    <Markdown>{module.content!.markdown}</Markdown>
-                  </div>
-                  {module.content!.keyTakeaways.length > 0 && (
-                    <div className="mt-4 rounded-lg border border-indigo-100 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-900/30">
-                      <p className="mb-2 text-sm font-medium text-indigo-900 dark:text-indigo-200">关键要点</p>
-                      <ul className="space-y-1 text-sm text-indigo-800 dark:text-indigo-300">
-                        {module.content!.keyTakeaways.map((p, i) => (
-                          <li key={i} className="flex gap-2">
-                            <span className="text-indigo-400 dark:text-indigo-500">{i + 1}.</span>
-                            <Markdown inline>{p}</Markdown>
-                          </li>
-                        ))}
-                      </ul>
+                <div className="relative">
+                  <div ref={contentAreaRef}>
+                    <div className="prose prose-sm max-w-none dark:prose-invert">
+                      <Markdown>{module.content!.markdown}</Markdown>
                     </div>
-                  )}
+                    {module.content!.keyTakeaways.length > 0 && (
+                      <div className="mt-4 rounded-lg border border-indigo-100 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-900/30">
+                        <p className="mb-2 text-sm font-medium text-indigo-900 dark:text-indigo-200">关键要点</p>
+                        <ul className="space-y-1 text-sm text-indigo-800 dark:text-indigo-300">
+                          {module.content!.keyTakeaways.map((p, i) => (
+                            <li key={i} className="flex gap-2">
+                              <span className="text-indigo-400 dark:text-indigo-500">{i + 1}.</span>
+                              <Markdown inline>{p}</Markdown>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                  <Annotations
+                    containerRef={contentAreaRef}
+                    planId={planId!}
+                    moduleId={moduleId!}
+                    anchorKey={module.content!.markdown}
+                  />
                 </div>
               )}
             </div>

@@ -1,10 +1,48 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import type { Annotation } from "../api/types";
 
 export const PLAN_KEYS = {
   list: ["plans"] as const,
   detail: (id: string) => ["plan", id] as const,
 };
+
+export const ANNOTATION_KEYS = {
+  module: (planId: string, moduleId: string) => ["annotations", planId, moduleId] as const,
+};
+
+export function useAnnotations(planId: string, moduleId: string) {
+  return useQuery({
+    queryKey: ANNOTATION_KEYS.module(planId, moduleId),
+    queryFn: () => api.listAnnotations(planId, moduleId),
+  });
+}
+
+export function useCreateAnnotation(planId: string, moduleId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { quote: string; prefix: string; suffix: string; note: string }) =>
+      api.createAnnotation(planId, moduleId, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ANNOTATION_KEYS.module(planId, moduleId) }),
+  });
+}
+
+export function useUpdateAnnotation(planId: string, moduleId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ annotationId, note }: { annotationId: string; note: string }) =>
+      api.updateAnnotation(planId, annotationId, note),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ANNOTATION_KEYS.module(planId, moduleId) }),
+  });
+}
+
+export function useDeleteAnnotation(planId: string, moduleId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (annotationId: string) => api.deleteAnnotation(planId, annotationId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ANNOTATION_KEYS.module(planId, moduleId) }),
+  });
+}
 
 export function usePlans() {
   return useQuery({

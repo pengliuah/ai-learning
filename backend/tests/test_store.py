@@ -156,3 +156,40 @@ def test_token_usage_record_and_summary(tmp_store, admin_user, normal_user):
     # model 默认取用户配置 (未配置时为空串), 不抛异常
     store.record_token_usage(user_id, "quiz", 1, 2, 3)
     assert store.get_usage_summary(user_id)["today"]["requests"] == 2
+
+
+def test_annotations_crud_and_isolation(tmp_store, admin_user, normal_user):
+    """Annotation CRUD works per user; other users cannot see or touch them."""
+    admin_id = str(admin_user["id"])
+    user_id = str(normal_user["id"])
+    doc = store.create_document(PlanSource(input="x", mode="topic"), make_plan(modules=1), admin_id)
+    plan_id, module_key = doc.id, doc.plan.modules[0].id
+
+    a1 = store.create_annotation(admin_id, plan_id, module_key, "被注释的句子", "前文", "后文", "第一条笔记")
+    a2 = store.create_annotation(admin_id, plan_id, module_key, "另一句", note="第二条")
+    assert a1["quote"] == "被注释的句子" and a1["prefix"] == "前文"
+    assert a1["createdAt"] is not None
+
+    rows = store.list_annotations(admin_id, plan_id, module_key)
+    assert [r["id"] for r in rows] == [a1["id"], a2["id"]]
+
+    updated = store.update_annotation(admin_id, plan_id, a1["id"], "改过的笔记")
+    assert updated["note"] == "改过的笔记"
+
+    # 用户隔离: normal_user 看不到、改不了、删不掉 admin 的批注
+    assert store.list_annotations(user_id, plan_id, module_key) == []
+    with pytest.raises(KeyError):
+        store.update_annotation(user_id, plan_id, a1["id"], "越权修改")
+    with pytest.raises(KeyError):
+        store.delete_annotation(user_id, plan_id, a1["id"])
+    with pytest.raises(KeyError):
+        store.create_annotation(user_id, plan_id, module_key, "x")  # plan 不属于他
+
+    # 不存在的批注 id → KeyError / False
+    with pytest.raises(KeyError):
+        store.update_annotation(admin_id, plan_id, "does-not-exist", "n")
+    assert store.delete_annotation(admin_id, plan_id, "does-not-exist") is False
+
+    assert store.delete_annotation(admin_id, plan_id, a1["id"]) is True
+    assert store.delete_annotation(admin_id, plan_id, a1["id"]) is False
+    assert len(store.list_annotations(admin_id, plan_id, module_key)) == 1

@@ -261,3 +261,30 @@ class AdminCreateUserRequest(BaseModel):
 class AdminResetPasswordRequest(BaseModel):
     """POST /api/admin/users/{id}/reset-password body (admin only)."""
     new_password: str = Field(min_length=6)
+
+
+# ---------------------------------------------------------------------------
+# 学习内容批注（Word 式笔记）
+# ---------------------------------------------------------------------------
+
+class AnnotationOut(BaseModel):
+    id: str
+    planId: str
+    moduleKey: str
+    quote: str
+    prefix: str
+    suffix: str
+    note: str
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+
+class AnnotationCreate(BaseModel):
+    quote: str
+    prefix: str = ""
+    suffix: str = ""
+    note: str = ""
+
+
+class AnnotationUpdate(BaseModel):
+    note: str

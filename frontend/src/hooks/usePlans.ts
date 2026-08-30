@@ -40,7 +40,14 @@ export function useDeleteAnnotation(planId: string, moduleId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (annotationId: string) => api.deleteAnnotation(planId, annotationId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ANNOTATION_KEYS.module(planId, moduleId) }),
+    onSuccess: (_data, annotationId) => {
+      // 乐观移除：不等 refetch 完成，立即让高亮/卡片/虚线消失
+      qc.setQueryData<{ id: string }[] | undefined>(
+        ANNOTATION_KEYS.module(planId, moduleId),
+        (old) => (old ?? []).filter((a) => a.id !== annotationId),
+      );
+      qc.invalidateQueries({ queryKey: ANNOTATION_KEYS.module(planId, moduleId) });
+    },
   });
 }
 

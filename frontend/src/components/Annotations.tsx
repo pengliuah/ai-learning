@@ -219,6 +219,7 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey }: Annot
       registry.delete(HL_ACTIVE_NAME);
     }
     if (!container || annotations.length === 0) {
+      setSideLayout([]);
       setAnchorVersion((v) => v + 1);
       return;
     }

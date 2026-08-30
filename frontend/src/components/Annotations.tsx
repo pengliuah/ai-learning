@@ -6,7 +6,7 @@
  * 高亮用 CSS Custom Highlight API（不改 React 管理的 DOM），不支持的浏览器
  * 静默降级为仅列表。内容重新生成后找不到原文的批注标记为失效，数据保留。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Loader2, MessageSquarePlus, Pencil, StickyNote, Trash2, X } from "lucide-react";
 import {
   useAnnotations,
@@ -199,6 +199,12 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey }: Annot
   const [listOpen, setListOpen] = useState(false);
   // 重锚定后强制刷新列表的"是否失效"状态与高亮点击区域
   const [anchorVersion, setAnchorVersion] = useState(0);
+  // 宽屏侧边卡片布局：top 相对内容容器，anchorY/X 为高亮处（虚线起点）
+  const [sideLayout, setSideLayout] = useState<
+    { id: string; top: number; anchorY: number; anchorX: number; orphan: boolean }[]
+  >([]);
+  const [colX, setColX] = useState(0); // 侧列左缘相对容器的 x（虚线终点）
+  const cardRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
 
   const rangesRef = useRef<Map<string, Range>>(new Map());
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
@@ -230,8 +236,68 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey }: Annot
       }
       if (ranges.length) registry.set(HL_NAME, new HL(...ranges));
     }
+
+    // 侧边卡片布局：与各自高亮垂直对齐；锚点相近时向下避让防压盖
+    const base = container.getBoundingClientRect();
+    const GAP = 8;
+    const EST_H = 100; // 渲染后用实测高度二次校正
+    const items = annotations.map((anno) => {
+      const range = rangesRef.current.get(anno.id);
+      if (!range) {
+        // 失效批注：排在内容末尾
+        return { id: anno.id, top: container.scrollHeight - 40, anchorY: container.scrollHeight - 40, anchorX: container.clientWidth, orphan: true };
+      }
+      const r = range.getBoundingClientRect();
+      const anchorY = r.top - base.top + Math.min(r.height, 24) / 2;
+      return { id: anno.id, top: anchorY - 14, anchorY, anchorX: r.right - base.left, orphan: false };
+    });
+    items.sort((a, b) => a.top - b.top);
+    let prevBottom = -Infinity;
+    for (const it of items) {
+      it.top = Math.max(it.top, prevBottom + GAP);
+      prevBottom = it.top + EST_H;
+    }
+    setSideLayout(items);
+    setColX(container.clientWidth + 24);
     setAnchorVersion((v) => v + 1);
   }, [annotations, containerRef]);
+
+  // 卡片渲染后用实测高度二次校正避让（估算高度不准时收敛到真实布局）
+  useLayoutEffect(() => {
+    if (sideLayout.length === 0) return;
+    const GAP = 8;
+    let prevBottom = -Infinity;
+    let changed = false;
+    const next = [...sideLayout]
+      .sort((a, b) => a.top - b.top)
+      .map((it) => {
+        const top = Math.max(it.top, prevBottom + GAP);
+        const h = cardRefs.current.get(it.id)?.offsetHeight ?? 0;
+        prevBottom = top + h;
+        if (Math.abs(top - it.top) > 1) {
+          changed = true;
+          return { ...it, top };
+        }
+        return it;
+      });
+    if (changed) setSideLayout(next);
+  }, [sideLayout, anchorVersion]);
+
+  // 容器尺寸变化（图片加载、窗口缩放）后重新锚定
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(reanchor);
+    });
+    ro.observe(container);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [containerRef, reanchor]);
 
   useEffect(() => {
     // 等一帧让 react-markdown 完成 DOM 提交后再锚定
@@ -416,87 +482,106 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey }: Annot
     return { top, left, width };
   };
 
-  const listBody = (
-    <div className="space-y-3">
-      {isLoading && (
-        <p className="flex items-center gap-2 text-xs text-gray-400">
-          <Loader2 className="h-3 w-3 animate-spin" /> 加载批注...
-        </p>
+  const cardNode = (a: Annotation, found: boolean) => (
+    <div
+      className={`rounded-md border p-2.5 text-xs ${
+        found
+          ? "border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-900/20"
+          : "border-gray-200 bg-gray-50 opacity-70 dark:border-gray-700 dark:bg-gray-900"
+      }`}
+    >
+      <p className={`line-clamp-2 border-l-2 pl-2 text-gray-500 dark:text-gray-400 ${found ? "border-amber-400" : "border-gray-300 dark:border-gray-600"}`}>
+        {a.quote}
+      </p>
+      <p className="mt-1.5 whitespace-pre-wrap text-gray-800 dark:text-gray-200">{a.note}</p>
+      {!found && (
+        <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">原文已重新生成，仅保留笔记</p>
       )}
-      {!isLoading && annotations.length === 0 && (
-        <p className="text-xs text-gray-400 dark:text-gray-500">
-          选中内容文字即可添加批注，笔记只对你自己可见。
-        </p>
-      )}
-      {annotations.map((a) => {
-        const found = rangesRef.current.has(a.id);
-        return (
-          <div
-            key={a.id}
-            className={`rounded-md border p-2.5 text-xs ${
-              found
-                ? "border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-900/20"
-                : "border-gray-200 bg-gray-50 opacity-70 dark:border-gray-700 dark:bg-gray-900"
-            }`}
+      <div className="mt-1.5 flex justify-end gap-2">
+        <button
+          onClick={() => openEditorFor(a)}
+          className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
+        >
+          <Pencil className="h-3 w-3" /> 编辑
+        </button>
+        <button
+          onClick={() => handleDelete(a.id)}
+          className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
+        >
+          <Trash2 className="h-3 w-3" /> 删除
+        </button>
+        {found && (
+          <button
+            onClick={() => scrollAnnoIntoView(a.id)}
+            className="text-[11px] text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300"
           >
-            <p className={`line-clamp-2 border-l-2 pl-2 text-gray-500 dark:text-gray-400 ${found ? "border-amber-400" : "border-gray-300 dark:border-gray-600"}`}>
-              {a.quote}
-            </p>
-            <p className="mt-1.5 whitespace-pre-wrap text-gray-800 dark:text-gray-200">{a.note}</p>
-            {!found && (
-              <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">原文已重新生成，仅保留笔记</p>
-            )}
-            <div className="mt-1.5 flex justify-end gap-2">
-              <button
-                onClick={() => openEditorFor(a)}
-                className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
-              >
-                <Pencil className="h-3 w-3" /> 编辑
-              </button>
-              <button
-                onClick={() => handleDelete(a.id)}
-                className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
-              >
-                <Trash2 className="h-3 w-3" /> 删除
-              </button>
-              {found && (
-                <button
-                  onClick={() => scrollAnnoIntoView(a.id)}
-                  className="text-[11px] text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300"
-                >
-                  定位
-                </button>
-              )}
-            </div>
-          </div>
-        );
-      })}
+            定位
+          </button>
+        )}
+      </div>
     </div>
   );
 
   return (
     <>
-      {/* 批注列表：宽屏显示在内容右侧一列，窄屏折叠在内容下方；没有批注时不显示 */}
-      {annotations.length > 0 && (
+      {/* 宽屏侧边：卡片与各自高亮位置对齐，虚线连到正文；没有批注时不渲染 */}
+      {sideLayout.length > 0 && (
         <>
-          <div className="hidden xl:block absolute left-full top-0 ml-6 w-64 space-y-2">
-            <h3 className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400">
-              <StickyNote className="h-3.5 w-3.5" /> 批注
-              <span className="font-normal text-gray-400">{annotations.length}</span>
-            </h3>
-            {listBody}
-          </div>
-          <div className="mt-6 xl:hidden">
-            <button
-              onClick={() => setListOpen((v) => !v)}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
-            >
-              <StickyNote className="h-3.5 w-3.5" />
-              批注（{annotations.length}）
-            </button>
-            {listOpen && <div className="mt-2">{listBody}</div>}
+          <svg className="pointer-events-none absolute inset-0 hidden h-full w-full overflow-visible xl:block">
+            {sideLayout
+              .filter((it) => !it.orphan)
+              .map((it) => (
+                <line
+                  key={it.id}
+                  x1={it.anchorX}
+                  y1={it.anchorY}
+                  x2={colX - 6}
+                  y2={it.top + 18}
+                  stroke="#f59e0b"
+                  strokeOpacity={0.6}
+                  strokeWidth={1}
+                  strokeDasharray="4 3"
+                />
+              ))}
+          </svg>
+          <div className="hidden xl:block absolute left-full top-0 ml-6 w-64">
+            {sideLayout.map((it) => {
+              const a = annotations.find((x) => x.id === it.id);
+              if (!a) return null;
+              return (
+                <div
+                  key={it.id}
+                  ref={(el) => {
+                    if (el) cardRefs.current.set(it.id, el);
+                    else cardRefs.current.delete(it.id);
+                  }}
+                  className="absolute left-0 w-full"
+                  style={{ top: it.top }}
+                >
+                  {cardNode(a, !it.orphan)}
+                </div>
+              );
+            })}
           </div>
         </>
+      )}
+
+      {/* 窄屏折叠列表 */}
+      {annotations.length > 0 && (
+        <div className="mt-6 xl:hidden">
+          <button
+            onClick={() => setListOpen((v) => !v)}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            <StickyNote className="h-3.5 w-3.5" />
+            批注（{annotations.length}）
+          </button>
+          {listOpen && (
+            <div className="mt-2 space-y-3">
+              {annotations.map((a) => cardNode(a, rangesRef.current.has(a.id)))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* 选区浮条 */}

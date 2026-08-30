@@ -476,24 +476,28 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey }: Annot
 
   return (
     <>
-      {/* 批注列表：宽屏显示在内容右侧一列，窄屏折叠在内容下方 */}
-      <div className="hidden xl:block absolute left-full top-0 ml-6 w-64 space-y-2">
-        <h3 className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400">
-          <StickyNote className="h-3.5 w-3.5" /> 批注
-          <span className="font-normal text-gray-400">{annotations.length}</span>
-        </h3>
-        {listBody}
-      </div>
-      <div className="mt-6 xl:hidden">
-        <button
-          onClick={() => setListOpen((v) => !v)}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
-        >
-          <StickyNote className="h-3.5 w-3.5" />
-          批注（{annotations.length}）
-        </button>
-        {listOpen && <div className="mt-2">{listBody}</div>}
-      </div>
+      {/* 批注列表：宽屏显示在内容右侧一列，窄屏折叠在内容下方；没有批注时不显示 */}
+      {annotations.length > 0 && (
+        <>
+          <div className="hidden xl:block absolute left-full top-0 ml-6 w-64 space-y-2">
+            <h3 className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400">
+              <StickyNote className="h-3.5 w-3.5" /> 批注
+              <span className="font-normal text-gray-400">{annotations.length}</span>
+            </h3>
+            {listBody}
+          </div>
+          <div className="mt-6 xl:hidden">
+            <button
+              onClick={() => setListOpen((v) => !v)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+              <StickyNote className="h-3.5 w-3.5" />
+              批注（{annotations.length}）
+            </button>
+            {listOpen && <div className="mt-2">{listBody}</div>}
+          </div>
+        </>
+      )}
 
       {/* 选区浮条 */}
       {bubble && !editor && (

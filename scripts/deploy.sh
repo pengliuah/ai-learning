@@ -3,8 +3,9 @@
 # zhixue 自动部署脚本 (Linux, 支持 测试/线上 双环境)
 #
 # 用法:
-#   sudo bash scripts/deploy.sh test    # 测试环境: 纯 HTTP, IP 访问 (compose: docker-compose.test.yml)
-#   sudo bash scripts/deploy.sh prod    # 线上环境: HTTPS 域名证书 (compose: docker-compose.prod.yml)
+#   sudo bash scripts/deploy.sh test          # 测试环境: 纯 HTTP, IP 访问 (compose: docker-compose.test.yml)
+#   sudo bash scripts/deploy.sh prod          # 线上环境: HTTPS 域名证书 (compose: docker-compose.prod.yml)
+#   sudo bash scripts/deploy.sh test debug    # 可选第 2 个参数: 后端日志级别, 默认 INFO (如 info/debug/warning)
 #
 # 流程:
 #   1. 停掉旧容器
@@ -33,12 +34,15 @@ warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
 err()  { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; }
 
 usage() {
-  echo "用法: sudo bash scripts/deploy.sh test|prod"
+  echo "用法: sudo bash scripts/deploy.sh test|prod [日志级别]"
+  echo "  日志级别: 可选, 默认 INFO (大小写不敏感, 如 debug/warning; 写入 .env 的 LOG_LEVEL)"
   exit 1
 }
 
 ENV=${1:-}
 [ "$ENV" = "test" ] || [ "$ENV" = "prod" ] || usage
+# 日志级别: 默认 INFO; 指定则原样采用 (统一大写), 由 compose 传给后端
+LOG_LEVEL_ARG=$(printf '%s' "${2:-INFO}" | tr '[:lower:]' '[:upper:]')
 
 COMPOSE_FILE="docker-compose.$ENV.yml"
 CERT_PEM="nginx/ssl/www.ailearningagent.xyz.pem"
@@ -126,6 +130,18 @@ fi
 if [ -f "$APP_DIR/.env" ] && grep -qE '^JWT_SECRET=\s*$' "$APP_DIR/.env"; then
   warn "JWT_SECRET 未设置: 每次重启后所有用户需重新登录, 建议在 .env 中配置"
 fi
+
+# 日志级别: 写入/更新 .env 的 LOG_LEVEL (无 .env 时先从模板创建)
+if [ ! -f "$APP_DIR/.env" ]; then
+  cp "$APP_DIR/deploy.env.example" "$APP_DIR/.env"
+  log "4/5 已从 deploy.env.example 创建 .env (请尽快设置 JWT_SECRET / ADMIN_PASSWORD)"
+fi
+if grep -qE '^LOG_LEVEL=' "$APP_DIR/.env"; then
+  sed -i "s/^LOG_LEVEL=.*/LOG_LEVEL=$LOG_LEVEL_ARG/" "$APP_DIR/.env"
+else
+  printf '\n# --- 后端日志级别 (deploy.sh 第 2 个参数) ---\nLOG_LEVEL=%s\n' "$LOG_LEVEL_ARG" >> "$APP_DIR/.env"
+fi
+log "4/5 后端日志级别: $LOG_LEVEL_ARG (已写入 $APP_DIR/.env)"
 
 # ---- 5. 构建镜像并启动, 健康检查 ----
 log "5/5 构建镜像并启动服务 ($ENV)"

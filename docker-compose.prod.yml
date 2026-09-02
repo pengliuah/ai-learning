@@ -22,7 +22,7 @@ services:
     volumes:
       - ./backend/data:/app/backend/data
     environment:
-      - LOG_LEVEL=${LOG_LEVEL:-WARNING}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-123}@postgres:5432/zhixue
       # 账号系统: JWT 签名密钥与首次引导管理员 (模型 API Key 不在这里,
       # 每个用户登录后在网页「模型设置」页配置, 存数据库)

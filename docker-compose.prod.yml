@@ -41,7 +41,9 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # 数据落在宿主机 ./pgdata (gitignore 外部数据), 命名卷可能被
+      # docker volume prune / 项目名变化弄丢, 目录看得见最稳
+      - ./pgdata:/var/lib/postgresql/data
       - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -61,6 +63,3 @@ services:
     depends_on:
       - zhixue
     restart: unless-stopped
-
-volumes:
-  pgdata:

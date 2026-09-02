@@ -15,7 +15,7 @@
                      │   :80 -> 301 :443 (prod)                     │
   Android App ──────►  /api  ──► FastAPI :8000 (zhixue 容器)         │
   (Capacitor APK)    │   /    ──► FastAPI 托管前端 dist (SPA)        │
-                     │        ──► postgres:5432 (pgdata 卷持久化)    │
+                     │        ──► postgres:5432 (宿主机 ./pgdata 持久化) │
                      └──────────────────────────────────────────────┘
 ```
 
@@ -53,10 +53,10 @@ sudo vi .env
 
 | 变量 | 说明 |
 |---|---|
-| `POSTGRES_PASSWORD` | 数据库密码。**注意**：`pgdata` 卷已用旧密码初始化过的话，改这里不会改库密码，需与卷保持一致（默认 `123`） |
+| `POSTGRES_PASSWORD` | 数据库密码。**注意**：数据库已用旧密码初始化过的话，改这里不会改库密码，需保持一致（默认 `123`） |
 | `JWT_SECRET` | JWT 签名密钥。不设则每次重启随机生成、所有用户需重新登录。**强烈建议设置**：`python3 -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 首次启动引导管理员（仅 users 表为空时创建）。请设置强密码；登录后可在网页「账号设置」页修改 |
-| `LOG_LEVEL` | 后端日志级别，测试环境默认 INFO，线上默认 WARNING |
+| `LOG_LEVEL` | 后端日志级别，默认 INFO；`deploy.sh` 的第 2 个参数会自动改写这里（如 `deploy.sh test debug`） |
 
 ## 3. 测试环境部署（HTTP，IP 直连）
 
@@ -168,7 +168,7 @@ VITE_API_BASE=https://www.ailearningagent.xyz/api npm run dev:apk   # 调试 APK
 
 | 现象 | 排查 |
 |---|---|
-| 健康检查 000/超时 | `docker compose -f docker-compose.<env>.yml ps && logs zhixue`；常见为 `.env` 缺失或 DATABASE_URL 密码与 pgdata 卷不一致 |
+| 健康检查 000/超时 | `docker compose -f docker-compose.<env>.yml ps && logs zhixue`；常见为 `.env` 缺失或 DATABASE_URL 密码与已初始化的数据库不一致 |
 | prod nginx 起不来 | 证书文件缺失/命名不对（看 `logs nginx`）；`deploy.sh prod` 会提前校验 |
 | 登录后每 次重启都要重登 | `.env` 未设 `JWT_SECRET`（每次重启随机生成） |
 | 忘记 admin 密码 | 另一个 admin 可在「用户管理」重置；没有其他 admin 时需在数据库重置（bcrypt 哈希，找开发处理） |

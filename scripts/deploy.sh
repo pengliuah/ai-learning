@@ -43,6 +43,9 @@ ENV=${1:-}
 [ "$ENV" = "test" ] || [ "$ENV" = "prod" ] || usage
 # 日志级别: 默认 INFO; 指定则原样采用 (统一大写), 由 compose 传给后端
 LOG_LEVEL_ARG=$(printf '%s' "${2:-INFO}" | tr '[:lower:]' '[:upper:]')
+ts=$(date +%Y%m%d-%H%M%S)
+PGDATA_DIR="$APP_DIR/pgdata"
+OLD_DB_VOLUME="zhixue_pgdata"
 
 COMPOSE_FILE="docker-compose.$ENV.yml"
 CERT_PEM="nginx/ssl/www.ailearningagent.xyz.pem"
@@ -60,6 +63,19 @@ for c in git docker curl; do
 done
 docker compose version >/dev/null 2>&1 || { err "未找到 'docker compose' (需 Docker Compose v2)"; exit 1; }
 
+# ---- 0. 部署前数据库备份 (任何持久化变更/翻车都可回) ----
+running_pg=$(docker ps -q --filter "ancestor=postgres:16-alpine" | head -1)
+if [ -n "$running_pg" ]; then
+  mkdir -p "$BACKUP_DIR"
+  if docker exec "$running_pg" pg_dumpall -U postgres 2>/dev/null | gzip > "$BACKUP_DIR/zhixue-db-$ts.sql.gz"; then
+    log "0/5 已备份数据库 -> $BACKUP_DIR/zhixue-db-$ts.sql.gz ($(du -h "$BACKUP_DIR/zhixue-db-$ts.sql.gz" | cut -f1))"
+  else
+    warn "数据库备份失败 (pg_dumpall), 继续部署但数据不可回滚!"
+  fi
+else
+  warn "0/5 未发现运行中的 postgres 容器, 跳过数据库备份"
+fi
+
 # ---- 1. 停掉旧容器 ----
 log "1/5 停止并移除旧容器"
 cd "$APP_DIR" 2>/dev/null && docker compose down 2>/dev/null || true
@@ -72,9 +88,18 @@ else
   log "无残留容器, 跳过"
 fi
 
+# 一次性迁移: 旧部署的数据库在命名卷 zhixue_pgdata 里, 现改为宿主机
+# ./pgdata 持久化; 卷存在且目标目录为空时把数据搬过来 (postgres 已停止, 拷贝安全)
+if docker volume inspect "$OLD_DB_VOLUME" >/dev/null 2>&1 && [ ! -f "$PGDATA_DIR/PG_VERSION" ]; then
+  log "检测到旧数据库卷 $OLD_DB_VOLUME, 迁移到 $PGDATA_DIR (一次性)..."
+  mkdir -p "$PGDATA_DIR"
+  docker run --rm -v "$OLD_DB_VOLUME":/from:ro -v "$PGDATA_DIR":/to alpine \
+    sh -c 'cp -a /from/. /to/ && chown -R 70:70 /to'
+  log "旧卷数据已迁移到 $PGDATA_DIR"
+fi
+
 # ---- 2. 备份服务器自定义配置 (compose 与 .env) ----
 # git reset --hard 只覆盖跟踪文件; 这里备份的是服务器侧可能改过的文件。
-ts=$(date +%Y%m%d-%H%M%S)
 if [ -f "$APP_DIR/$COMPOSE_FILE" ]; then
   cp -a "$APP_DIR/$COMPOSE_FILE" "$BACKUP_DIR/$COMPOSE_FILE.bak.$ts"
   log "2/5 已备份 $COMPOSE_FILE -> $BACKUP_DIR/"

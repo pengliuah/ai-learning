@@ -30,3 +30,6 @@ nginx/ssl/*.crt
 # server-specific compose overrides (never commit, preserved by reset --hard)
 docker-compose.override.yml
 docker-compose.override.*.yml
+
+# postgres 宿主机数据目录 (deploy 持久化)
+pgdata/

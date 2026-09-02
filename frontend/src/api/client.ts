@@ -115,6 +115,53 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+/** SSE 长任务 (测验生成/批改): 后端生成期间每 30s 发 ": ping" 注释帧保活,
+ *  注释帧被解析器自然忽略; done 事件返回最终数据, error 事件抛出。 */
+async function sseTask<T>(url: string): Promise<T> {
+  const doFetch = () => fetch(`${API_BASE}${url}`, { method: "POST", headers: authHeaders() });
+  let res = await doFetch();
+  if (res.status === 401) {
+    if (await tryRefresh()) res = await doFetch();
+    else {
+      redirectToLogin();
+      throw new Error("登录已过期，请重新登录");
+    }
+  }
+  if (!res.ok) throw await httpError(res);
+
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let doneData: T | null = null;
+  let errMsg: string | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() || "";
+
+    for (const frame of frames) {
+      let eventType = "";
+      let dataStr = "";
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+        else if (line.startsWith("data: ")) dataStr += line.slice(6);
+        // ": ping" 注释帧没有 data 行, 自然跳过
+      }
+      if (!dataStr) continue;
+      const data = JSON.parse(dataStr);
+      if (eventType === "done") doneData = data as T;
+      else if (eventType === "error") errMsg = data.detail;
+    }
+  }
+
+  if (errMsg) throw new Error(errMsg);
+  if (doneData === null) throw new Error("stream ended without done event");
+  return doneData;
+}
+
 export const api = {
   health: () => json<{ configured: boolean; model: string }>("/health"),
 
@@ -196,8 +243,10 @@ export const api = {
   deletePlan: (id: string) =>
     json<{ deleted: string }>(`/plans/${id}`, { method: "DELETE" }),
 
+  // 测验生成/批改是分钟级长任务, 走 SSE + 30s 心跳, 避免移动网络/nginx
+  // 掐断无数据回传的连接 (Failed to fetch); 返回值仍是完整 Document。
   generateQuiz: (planId: string, moduleId: string) =>
-    json<Document>(`/plans/${planId}/modules/${moduleId}/quiz`, { method: "POST" }),
+    sseTask<Document>(`/plans/${planId}/modules/${moduleId}/quiz`),
 
   getQuiz: (planId: string, moduleId: string) =>
     json<Quiz>(`/plans/${planId}/modules/${moduleId}/quiz`),
@@ -216,7 +265,7 @@ export const api = {
     json<AnswersState>(`/plans/${planId}/modules/${moduleId}/answers`),
 
   gradeQuiz: (planId: string, moduleId: string) =>
-    json<Document>(`/plans/${planId}/modules/${moduleId}/grade`, { method: "POST" }),
+    sseTask<Document>(`/plans/${planId}/modules/${moduleId}/grade`),
 
   patchModule: (planId: string, moduleId: string, status: string) =>
     json<Document>(`/plans/${planId}/modules/${moduleId}`, {

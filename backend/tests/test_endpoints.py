@@ -8,6 +8,24 @@ from _factories import make_plan, make_quiz, make_result
 from conftest import auth_headers
 
 
+def _sse_done(r):
+    """POST quiz/grade 现在返回 SSE 流, 解析 done 事件里的最终 Document。"""
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    for frame in r.text.split("\n\n"):
+        event = ""
+        data = ""
+        for line in frame.split("\n"):
+            if line.startswith("event: "):
+                event = line[7:]
+            elif line.startswith("data: "):
+                data += line[6:]
+        if event == "done":
+            import json
+            return json.loads(data)
+    raise AssertionError("no done event in stream")
+
+
 # ----- health -----
 
 def test_health_configured(client):
@@ -86,8 +104,7 @@ def test_generate_and_get_quiz(client, fake_coach, seeded_doc):
     fake_coach.quiz = make_quiz()
     mid = seeded_doc.plan.modules[0].id
     r = client.post(f"/api/plans/{seeded_doc.id}/modules/{mid}/quiz")
-    assert r.status_code == 200
-    module = next(m for m in r.json()["plan"]["modules"] if m["id"] == mid)
+    module = next(m for m in _sse_done(r)["plan"]["modules"] if m["id"] == mid)
     assert module["quiz"] is not None
     assert len(module["quiz"]["questions"]) == 2
 
@@ -114,8 +131,7 @@ def test_regenerate_quiz_clears_result_and_answers(client, fake_coach, seeded_do
 
     # Regenerate quiz
     r = client.post(f"{base}/quiz")
-    assert r.status_code == 200
-    mod = next(m for m in r.json()["plan"]["modules"] if m["id"] == mid)
+    mod = next(m for m in _sse_done(r)["plan"]["modules"] if m["id"] == mid)
     assert mod["quiz"] is not None
     assert mod["result"] is None
     assert mod["answers"] is None
@@ -181,8 +197,7 @@ def test_grade_happy_sets_completed(client, fake_coach, seeded_doc):
     client.post(f"/api/plans/{seeded_doc.id}/modules/{mid}/quiz")
     client.put(f"/api/plans/{seeded_doc.id}/modules/{mid}/answers", json={"answers": {"q1": "2", "q2": "text"}})
     r = client.post(f"/api/plans/{seeded_doc.id}/modules/{mid}/grade")
-    assert r.status_code == 200
-    module = next(m for m in r.json()["plan"]["modules"] if m["id"] == mid)
+    module = next(m for m in _sse_done(r)["plan"]["modules"] if m["id"] == mid)
     assert module["status"] == "completed"
     assert module["result"] is not None
     assert module["result"]["maxScore"] == 2.0

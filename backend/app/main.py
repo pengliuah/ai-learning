@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import asyncio
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -67,6 +68,10 @@ app.add_middleware(AccessLogMiddleware)
 
 coach = LearningCoach()
 logger = logging.getLogger(__name__)
+
+# SSE 长任务 (测验生成/批改) 的心跳间隔: 期间无数据回传会被 nginx/移动网络
+# 当作空闲连接掐断 (浏览器报 Failed to fetch), 每 30s 发一个 ": ping" 注释帧保活。
+LLM_HEARTBEAT_SECONDS = 30
 
 
 def _user_public(user: dict) -> dict:
@@ -450,42 +455,64 @@ def get_content(plan_id: str, module_id: str, user: dict = Depends(get_current_u
 
 
 @app.post("/api/plans/{plan_id}/modules/{module_id}/quiz")
-def generate_quiz(plan_id: str, module_id: str, user: dict = Depends(get_current_user)):
-    """为某模块生成测验。
+async def generate_quiz(plan_id: str, module_id: str, user: dict = Depends(get_current_user)):
+    """为某模块生成测验（SSE + 心跳保活）。
 
     调用 DeepAgents Quizzer 子代理（``response_format=Quiz``），基于模块内容
     （若无内容则基于摘要）生成单选 + 简答题，并写回该模块。
 
-    路径参数:
-        - plan_id (str): 计划 id。
-        - module_id (str): 模块 id。
+    生成是分钟级长任务且期间无数据回传，移动网络/nginx 会掐断"空闲"连接
+    （浏览器报 Failed to fetch），因此改为 SSE：每 30 秒发一个注释帧
+    ``: ping`` 保活，完成后发 done 事件携带结果。
 
-    返回:
-        200 ``Document``: 更新后的完整计划文档（该模块含 ``quiz``）。
+    响应: ``text/event-stream``:
+
+        : ping            (每 30s 一次)
+        event: done
+        data: <完整 Document（JSON，该模块含 quiz；result/answers 已重置）>
+        event: error
+        data: {"detail": "<错误信息>"}
 
     错误:
-        - 503: 未在「模型设置」配置模型 API Key。
-        - 404: 计划或模块不存在。
-        - 502: LLM 或结构化输出失败（已内置一次重试）。
+        - 503: 未在「模型设置」配置模型 API Key（流开始前）。
+        - 404: 计划或模块不存在（流开始前）。
+        - 流中 error 事件: LLM 或结构化输出失败（已内置一次重试）。
     """
-    _require_configured(str(user["id"]))
-    doc = _get_doc(plan_id, str(user["id"]))
+    uid = str(user["id"])
+    _require_configured(uid)
+    doc = _get_doc(plan_id, uid)
     module = _get_module(doc, module_id)
-    try:
-        quiz = coach.make_quiz(doc.plan, module, str(user["id"]))
-    except Exception as exc:
-        logger.error("generate_quiz: failed: %s", exc)
-        raise HTTPException(status_code=502, detail=f"quiz generation failed: {exc}")
+    logger.info("generate_quiz: user=%s plan_id=%s module_id=%s", user["username"], plan_id, module_id)
 
-    def mutate(m):
-        m.quiz = quiz
-        # Regenerating the quiz invalidates any prior grading result and saved
-        # draft answers (they reference old question ids).
-        m.result = None
-        m.answers = None
+    def work():
+        quiz = coach.make_quiz(doc.plan, module, uid)
+        logger.info("generate_quiz: generated module_id=%s questions=%d", module_id, len(quiz.questions))
 
-    logger.info("generate_quiz: user=%s plan_id=%s module_id=%s questions=%d", user["username"], plan_id, module_id, len(quiz.questions))
-    return store.update_module(plan_id, module_id, mutate, str(user["id"]))
+        def mutate(m):
+            m.quiz = quiz
+            # Regenerating the quiz invalidates any prior grading result and saved
+            # draft answers (they reference old question ids).
+            m.result = None
+            m.answers = None
+
+        return store.update_module(plan_id, module_id, mutate, uid)
+
+    async def event_stream():
+        # LLM 调用放线程池; 每 30s 无结果就发心跳注释帧, 避免连接被中间层掐断
+        task = asyncio.create_task(asyncio.to_thread(work))
+        try:
+            while True:
+                try:
+                    updated = await asyncio.wait_for(asyncio.shield(task), timeout=LLM_HEARTBEAT_SECONDS)
+                    yield _sse("done", updated.model_dump(mode="json"))
+                    return
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        except Exception as exc:
+            logger.error("generate_quiz: failed: %s", exc)
+            yield _sse("error", {"detail": _friendly_llm_error(exc)})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.get("/api/plans/{plan_id}/modules/{module_id}/quiz")
@@ -562,8 +589,8 @@ def get_answers(plan_id: str, module_id: str, user: dict = Depends(get_current_u
 
 
 @app.post("/api/plans/{plan_id}/modules/{module_id}/grade")
-def grade_quiz(plan_id: str, module_id: str, user: dict = Depends(get_current_user)):
-    """批改某模块测验并给出评估（从已保存草稿批改）。
+async def grade_quiz(plan_id: str, module_id: str, user: dict = Depends(get_current_user)):
+    """批改某模块测验并给出评估（SSE + 心跳保活，从已保存草稿批改）。
 
     调用 DeepAgents Grader 子代理（``response_format=GradingResult``），
     从该模块已保存的 ``answers`` 草稿读取作答逐题评分并给出整体评估。
@@ -572,40 +599,58 @@ def grade_quiz(plan_id: str, module_id: str, user: dict = Depends(get_current_us
 
     典型流程: ``PUT .../answers``（随答随存草稿） -> ``POST .../grade``（批改）。
 
-    路径参数:
-        - plan_id (str): 计划 id。
-        - module_id (str): 模块 id。
+    与测验生成同为分钟级长任务，改为 SSE：每 30 秒发 ``: ping`` 注释帧保活。
 
-    返回:
-        200 ``Document``: 更新后的完整计划文档（该模块含 ``result``，
-        且 ``status`` 为 ``completed``）。
+    响应: ``text/event-stream``:
+
+        : ping            (每 30s 一次)
+        event: done
+        data: <完整 Document（JSON，该模块含 result，status 为 completed）>
+        event: error
+        data: {"detail": "<错误信息>"}
 
     错误:
-        - 503: 未在「模型设置」配置模型 API Key。
-        - 404: 计划/模块不存在，或该模块尚未生成测验。
-        - 400: 没有已保存作答（需先 ``PUT .../answers``）。
-        - 502: LLM 或结构化输出失败（已内置一次重试）。
+        - 503: 未在「模型设置」配置模型 API Key（流开始前）。
+        - 404: 计划/模块不存在，或该模块尚未生成测验（流开始前）。
+        - 400: 没有已保存作答（流开始前）。
+        - 流中 error 事件: LLM 或结构化输出失败（已内置一次重试）。
     """
-    _require_configured(str(user["id"]))
-    doc = _get_doc(plan_id, str(user["id"]))
+    uid = str(user["id"])
+    _require_configured(uid)
+    doc = _get_doc(plan_id, uid)
     module = _get_module(doc, module_id)
     if module.quiz is None:
         raise HTTPException(status_code=404, detail="quiz not generated")
     answers = module.answers or {}
     if not answers:
         raise HTTPException(status_code=400, detail="no saved answers to grade; PUT .../answers first")
-    try:
-        result = coach.grade_quiz(doc.plan, module, answers, str(user["id"]))
-    except Exception as exc:
-        logger.error("grade_quiz: failed: %s", exc)
-        raise HTTPException(status_code=502, detail=f"grading failed: {exc}")
 
-    def mutate(m):
-        m.result = result
-        m.status = ModuleStatus.completed
+    def work():
+        return coach.grade_quiz(doc.plan, module, answers, uid)
 
-    logger.info("grade_quiz: user=%s plan_id=%s module_id=%s score=%.1f/%.1f", user["username"], plan_id, module_id, result.totalScore, result.maxScore)
-    return store.update_module(plan_id, module_id, mutate, str(user["id"]))
+    async def event_stream():
+        task = asyncio.create_task(asyncio.to_thread(work))
+        try:
+            while True:
+                try:
+                    result = await asyncio.wait_for(asyncio.shield(task), timeout=LLM_HEARTBEAT_SECONDS)
+
+                    def mutate(m):
+                        m.result = result
+                        m.status = ModuleStatus.completed
+
+                    updated = store.update_module(plan_id, module_id, mutate, uid)
+                    logger.info("grade_quiz: ok user=%s plan_id=%s module_id=%s score=%.1f/%.1f",
+                                user["username"], plan_id, module_id, result.totalScore, result.maxScore)
+                    yield _sse("done", updated.model_dump(mode="json"))
+                    return
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        except Exception as exc:
+            logger.error("grade_quiz: failed: %s", exc)
+            yield _sse("error", {"detail": _friendly_llm_error(exc)})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.patch("/api/plans/{plan_id}/modules/{module_id}")

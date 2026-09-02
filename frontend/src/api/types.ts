@@ -1,7 +1,7 @@
 export type Level = "beginner" | "intermediate" | "advanced";
 export type Difficulty = "easy" | "medium" | "hard";
 export type ModuleStatus = "not_started" | "studying" | "completed";
-export type QuestionType = "mcq" | "short";
+export type QuestionType = "mcq" | "mcq_multi" | "short";
 
 export interface Content {
   markdown: string;
@@ -14,6 +14,8 @@ export interface Question {
   prompt: string;
   options: string[];
   answer: string | null;
+  /** mcq_multi (多选) 的全部正确选项 */
+  answers: string[];
   modelAnswer: string | null;
   keyPoints: string[];
   explanation: string;

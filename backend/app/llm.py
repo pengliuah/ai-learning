@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
+
 from langchain_openai import ChatOpenAI
 
 from . import store
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def build_chat_model(user_id: str, **kwargs) -> ChatOpenAI:
@@ -16,6 +20,10 @@ def build_chat_model(user_id: str, **kwargs) -> ChatOpenAI:
     api_key, model, base_url, max_tokens = store.get_llm_config(user_id)
     if not api_key:
         raise RuntimeError("model API key is not configured")
+    logger.info(
+        "build_chat_model: user=%s model=%s base_url=%s max_tokens=%s key=%s...(已隐藏)",
+        user_id, model, base_url, max_tokens, api_key[:6],
+    )
     params = {
         "model": model,
         "api_key": api_key,

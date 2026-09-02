@@ -88,6 +88,13 @@ export function ModuleDetail() {
     }, 800);
   };
 
+  // 多选题: 作答串以「、」分隔选项原文, 与批改/IMA 展示保持一致
+  const toggleMultiOption = (qid: string, opt: string) => {
+    const current = (answersRef.current[qid] || "").split("、").filter(Boolean);
+    const next = current.includes(opt) ? current.filter((o) => o !== opt) : [...current, opt];
+    updateAnswer(qid, next.join("、"));
+  };
+
   const handleGenerateContent = async () => {
     setStreaming(true);
     setStreamText("");
@@ -278,33 +285,11 @@ export function ModuleDetail() {
                       <p className="mb-3 text-sm font-medium text-gray-900 dark:text-gray-100">
                         {i + 1}. <Markdown inline>{q.prompt}</Markdown>
                         <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">
-                          {q.type === "mcq" ? "单选" : "简答"}
+                          {q.type === "mcq" ? "单选" : q.type === "mcq_multi" ? "多选" : "简答"}
                         </span>
                       </p>
 
-                      {q.type === "mcq" ? (
-                        <div className="space-y-2">
-                          {q.options.map((opt) => (
-                            <label
-                              key={opt}
-                              className={`flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm transition ${
-                                answers[q.id] === opt
-                                  ? "border-indigo-500 bg-indigo-50 dark:border-indigo-500 dark:bg-indigo-900/30"
-                                  : "border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600"
-                              }`}
-                            >
-                              <input
-                                type="radio"
-                                name={q.id}
-                                checked={answers[q.id] === opt}
-                                onChange={() => updateAnswer(q.id, opt)}
-                                className="text-indigo-600 dark:text-indigo-500"
-                              />
-                              <span className="text-gray-700 dark:text-gray-300"><Markdown inline>{opt}</Markdown></span>
-                            </label>
-                          ))}
-                        </div>
-                      ) : (
+                      {q.type === "short" ? (
                         <textarea
                           value={answers[q.id] || ""}
                           onChange={(e) => updateAnswer(q.id, e.target.value)}
@@ -312,6 +297,36 @@ export function ModuleDetail() {
                           placeholder="输入你的答案..."
                           className="w-full rounded-md border border-gray-300 bg-white p-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
                         />
+                      ) : (
+                        <div className="space-y-2">
+                          {q.options.map((opt) => {
+                            const checked =
+                              q.type === "mcq_multi"
+                                ? (answers[q.id] || "").split("、").filter(Boolean).includes(opt)
+                                : answers[q.id] === opt;
+                            return (
+                              <label
+                                key={opt}
+                                className={`flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm transition ${
+                                  checked
+                                    ? "border-indigo-500 bg-indigo-50 dark:border-indigo-500 dark:bg-indigo-900/30"
+                                    : "border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600"
+                                }`}
+                              >
+                                <input
+                                  type={q.type === "mcq_multi" ? "checkbox" : "radio"}
+                                  name={q.id}
+                                  checked={checked}
+                                  onChange={() =>
+                                    q.type === "mcq_multi" ? toggleMultiOption(q.id, opt) : updateAnswer(q.id, opt)
+                                  }
+                                  className="text-indigo-600 dark:text-indigo-500"
+                                />
+                                <span className="text-gray-700 dark:text-gray-300"><Markdown inline>{opt}</Markdown></span>
+                              </label>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
                   ))}
@@ -462,15 +477,17 @@ function ResultsView({
 
               <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-400">
                 <p><span className="text-gray-400 dark:text-gray-500">你的答案：</span>{qr.studentAnswer ? <Markdown inline>{qr.studentAnswer}</Markdown> : "（未作答）"}</p>
-                {q.type === "mcq" ? (
-                  <p><span className="text-gray-400 dark:text-gray-500">正确答案：</span>{q.answer && <Markdown inline>{q.answer}</Markdown>}</p>
-                ) : (
+                {q.type === "short" ? (
                   <>
                     <p><span className="text-gray-400 dark:text-gray-500">参考答案：</span>{q.modelAnswer && <Markdown inline>{q.modelAnswer}</Markdown>}</p>
                     {q.keyPoints.length > 0 && (
                       <p><span className="text-gray-400 dark:text-gray-500">要点：</span><Markdown inline>{q.keyPoints.join("、")}</Markdown></p>
                     )}
                   </>
+                ) : q.type === "mcq_multi" ? (
+                  <p><span className="text-gray-400 dark:text-gray-500">正确答案（多选）：</span>{q.answers.length > 0 && <Markdown inline>{q.answers.join("、")}</Markdown>}</p>
+                ) : (
+                  <p><span className="text-gray-400 dark:text-gray-500">正确答案：</span>{q.answer && <Markdown inline>{q.answer}</Markdown>}</p>
                 )}
                 <p><span className="text-gray-400 dark:text-gray-500">反馈：</span><Markdown inline>{qr.feedback}</Markdown></p>
               </div>

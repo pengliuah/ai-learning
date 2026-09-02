@@ -171,9 +171,13 @@ CONTENT_SYSTEM = (
 QUIZ_SYSTEM = (
     "你是一名测验设计者。针对给定模块与学习内容，设计一份测验。\n"
     "要求：\n"
-    "- 每道题 type 为 mcq（单选）或 short（简答）。\n"
-    "- mcq 题给出 2~4 个 options 与唯一正确 answer，以及 explanation。\n"
+    "- 每道题 type 为 mcq（单选）、mcq_multi（多选）或 short（简答）。\n"
+    "- mcq 单选题：给出 2~4 个 options，其中恰好一个正确，answer 填该正确选项的原文。\n"
+    "- mcq_multi 多选题：给出 4 个左右 options，其中 2 个及以上正确，"
+    "answers 数组按顺序填所有正确选项的原文（与 options 中的表述逐字一致）。"
+    "只有当考点确实存在多个正确说法时才出多选题，不要为了凑数硬造。\n"
     "- short 题给出 modelAnswer 与 2~5 条 keyPoints，以及 explanation。\n"
+    "- 每道题都给出 explanation。\n"
     "- 输出语言与计划语言保持一致。\n"
     + DIRECTNESS
     + MATH_NOTATION
@@ -184,6 +188,8 @@ GRADER_SYSTEM = (
     "要求：\n"
     "- 每题给出 score、maxScore、correct（布尔）、feedback。\n"
     "- 给出 totalScore、maxScore 与整体 assessment（优势/不足/建议/等级）。\n"
+    "- 单选题答案完全一致才给满分；多选题（mcq_multi）按命中正确项、且不含错误项给分，"
+    "全对才 correct，漏选/多选酌情给部分分。\n"
     "- 简答题按要点命中度给分；输出语言与计划语言保持一致。\n"
     + DIRECTNESS
     + MATH_NOTATION
@@ -197,6 +203,45 @@ COACH_SYSTEM = (
     "调用工具后，根据返回结果用自然语言向用户说明。"
     "输出语言与用户输入语言保持一致。"
 )
+
+
+def _log_llm_messages(tag: str, messages) -> None:
+    """打印发给大模型的请求内容。
+
+    INFO 级别只记摘要 (条数/字数); LOG_LEVEL=DEBUG 时打印全文,
+    便于排查"发给模型的到底是什么"。
+    """
+    parts = []
+    for m in messages or []:
+        role = getattr(m, "type", None) or type(m).__name__
+        content = getattr(m, "content", "")
+        content = content if isinstance(content, str) else str(content)
+        parts.append(f"[{role}] {content}")
+    text = "\n".join(parts)
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug("llm_request %s payload:\n%s", tag, text)
+    else:
+        logger.info(
+            "llm_request %s: messages=%d chars=%d (设置 LOG_LEVEL=DEBUG 可见全文)",
+            tag, len(messages or []), len(text),
+        )
+
+
+def _check_mcq_answers(quiz: Quiz) -> None:
+    """选择题一致性检查: 正确答案必须逐字命中 options, 否则记警告日志。"""
+    for q in quiz.questions:
+        if q.type.value == "mcq" and q.answer not in (q.options or []):
+            logger.warning(
+                "make_quiz: 单选题 answer 不在 options 中 (question=%s answer=%r options=%r)",
+                q.id, q.answer, q.options,
+            )
+        elif q.type.value == "mcq_multi":
+            bad = [a for a in q.answers if a not in (q.options or [])]
+            if len(q.answers) < 2 or bad:
+                logger.warning(
+                    "make_quiz: 多选题 answers 异常 (question=%s answers=%r 不在 options 中的=%r)",
+                    q.id, q.answers, bad,
+                )
 
 
 class LearningCoach:
@@ -236,6 +281,7 @@ class LearningCoach:
     def _invoke_structured(self, key: str, user_text: str, user_id: str):
         graph = self._build(user_id)[key]
         messages = {"messages": [HumanMessage(content=user_text)]}
+        _log_llm_messages(key, messages["messages"])
         logger.info("llm_invoke: agent=%s input_len=%d", key, len(user_text))
         try:
             result = graph.invoke(messages)
@@ -282,6 +328,7 @@ class LearningCoach:
     async def author_content_stream(self, plan: Plan, module: Module, user_id: str) -> AsyncIterator[tuple[str, object]]:
         streaming = build_streaming_model(user_id)
         user = self._content_user(plan, module, user_id)
+        _log_llm_messages("content", [SystemMessage(content=CONTENT_SYSTEM), HumanMessage(content=user)])
         parts: list[str] = []
         usage: dict | None = None
         try:
@@ -333,6 +380,7 @@ class LearningCoach:
         for idx, q in enumerate(quiz.questions, start=1):
             if not q.id:
                 q.id = f"q{idx}"
+        _check_mcq_answers(quiz)
         logger.info("make_quiz: module=%s questions=%d", module.id, len(quiz.questions))
         return quiz
 
@@ -351,6 +399,8 @@ class LearningCoach:
             student = answers.get(q.id, "")
             if q.type.value == "mcq":
                 ref = f"正确答案：{q.answer}"
+            elif q.type.value == "mcq_multi":
+                ref = f"正确答案（多选）：{'、'.join(q.answers)}"
             else:
                 ref = f"参考答案：{q.modelAnswer}；要点：{', '.join(q.keyPoints)}"
             lines.append(f"题目 {q.id}（{q.type.value}）：{q.prompt}\n{ref}\n学生作答：{student}")
@@ -453,14 +503,24 @@ class LearningCoach:
                 return title, "该模块尚未生成测验"
             lines = [f"## 测验：{module.title}", ""]
             for i, q in enumerate(module.quiz.questions, 1):
+                type_label = {"mcq": "单选", "mcq_multi": "多选"}.get(q.type.value, "简答")
                 lines.append(f"### {i}. {q.prompt}")
-                lines.append(f"*{('单选' if q.type.value == 'mcq' else '简答')}*")
+                lines.append(f"*{type_label}*")
                 lines.append("")
+                correct_set = q.answers if q.type.value == "mcq_multi" else ([q.answer] if q.answer else [])
                 if q.type.value == "mcq":
                     for opt in q.options:
                         mark = " ✓" if opt == q.answer else ""
                         lines.append(f"- {opt}{mark}")
                     lines.append("")
+                else:
+                    for opt in q.options:
+                        mark = " ✓" if opt in correct_set else ""
+                        lines.append(f"- {opt}{mark}")
+                    lines.append("")
+                    if correct_set:
+                        lines.append(f"> **正确答案：** {'、'.join(correct_set)}")
+                        lines.append("")
                 lines.append(f"> **解析：** {q.explanation}")
                 if q.type.value == "short" and q.modelAnswer:
                     lines.append(f"> **参考答案：** {q.modelAnswer}")
@@ -505,6 +565,8 @@ class LearningCoach:
                     lines.append(f"- 你的答案：{qr.studentAnswer or '（未作答）'}")
                     if q.type.value == "mcq":
                         lines.append(f"- 正确答案：{q.answer or ''}")
+                    elif q.type.value == "mcq_multi":
+                        lines.append(f"- 正确答案（多选）：{'、'.join(q.answers)}")
                     elif q.modelAnswer:
                         lines.append(f"- 参考答案：{q.modelAnswer}")
                     lines.append(f"- 反馈：{qr.feedback}")
@@ -529,6 +591,7 @@ class LearningCoach:
         )
         user = f"保存策略要求：\n{skill_prompt}\n\n待整理的学习内容：\n{content}"
         model = build_chat_model(user_id)
+        _log_llm_messages("ima", [SystemMessage(content=system), HumanMessage(content=user)])
         result = model.invoke([SystemMessage(content=system), HumanMessage(content=user)])
         _record_usage(user_id, "ima", getattr(result, "usage_metadata", None))
         text = result.content
@@ -594,6 +657,7 @@ class LearningCoach:
 
         messages = memory.build_messages_from(kept, dropped, summary)
         messages.append(HumanMessage(content=goal))
+        _log_llm_messages("coach", messages)
         return messages
 
 

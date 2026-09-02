@@ -71,7 +71,7 @@ def _load_module(conn, row) -> Module:
 
     quiz: Quiz | None = None
     q_rows = conn.execute(
-        """SELECT key, type, prompt, options, answer, model_answer,
+        """SELECT key, type, prompt, options, answer, answers, model_answer,
                   key_points, explanation
            FROM questions WHERE module_id = %s ORDER BY sort_order""",
         (mod_id,),
@@ -84,6 +84,7 @@ def _load_module(conn, row) -> Module:
                 prompt=qr["prompt"],
                 options=qr["options"],
                 answer=qr["answer"],
+                answers=qr.get("answers") or [],
                 modelAnswer=qr["model_answer"],
                 keyPoints=qr["key_points"],
                 explanation=qr["explanation"],
@@ -206,11 +207,12 @@ def _insert_children(conn, mod_uuid: str, module: Module, now: datetime) -> None
         for j, q in enumerate(module.quiz.questions):
             conn.execute(
                 """INSERT INTO questions
-                       (module_id, key, type, prompt, options, answer,
+                       (module_id, key, type, prompt, options, answer, answers,
                         model_answer, key_points, explanation, sort_order)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (mod_uuid, q.id, q.type.value, q.prompt, Jsonb(q.options),
-                 q.answer, q.modelAnswer, Jsonb(q.keyPoints), q.explanation, j),
+                 q.answer, Jsonb(q.answers), q.modelAnswer, Jsonb(q.keyPoints),
+                 q.explanation, j),
             )
 
     if module.result is not None:

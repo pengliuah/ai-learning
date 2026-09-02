@@ -200,7 +200,8 @@ describe('ModuleDetail', () => {
               prompt: '化简 $\\frac{1}{2} + \\frac{1}{2}$ 的结果是？',
               options: ['$\\frac{1}{2}$', '$1$', '$\\frac{1}{4}$'],
               answer: '$1$',
-              modelAnswer: null,
+              answers: [],
+modelAnswer: null,
               keyPoints: [],
               explanation: '同分母相加',
             },
@@ -236,6 +237,7 @@ describe('ModuleDetail', () => {
               prompt: '求 $x^2 = 4$ 的解',
               options: [],
               answer: null,
+              answers: [],
               modelAnswer: '解为 $x = \\pm 2$',
               keyPoints: ['$x^2$ 的根成对出现', '记号 $\\pm$'],
               explanation: '',
@@ -301,7 +303,7 @@ describe('ModuleDetail', () => {
         id: "m1",
         quiz: {
           questions: [
-            { id: "q1", type: "mcq", prompt: "new question", options: ["a", "b"], answer: "a", modelAnswer: null, keyPoints: [], explanation: "" },
+            { id: "q1", type: "mcq", prompt: "new question", options: ["a", "b"], answer: "a", answers: [], modelAnswer: null, keyPoints: [], explanation: "" },
           ],
         },
       }),

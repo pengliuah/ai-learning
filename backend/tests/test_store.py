@@ -193,3 +193,22 @@ def test_annotations_crud_and_isolation(tmp_store, admin_user, normal_user):
     assert store.delete_annotation(admin_id, plan_id, a1["id"]) is True
     assert store.delete_annotation(admin_id, plan_id, a1["id"]) is False
     assert len(store.list_annotations(admin_id, plan_id, module_key)) == 1
+
+
+def test_mcq_multi_roundtrip(tmp_store, owner):
+    """多选题的 answers 列表能完整落库并读回。"""
+    from app.schemas import Question, QuestionType, Quiz
+
+    quiz = Quiz(questions=[
+        Question(id="q1", type=QuestionType.mcq_multi, prompt="哪些正确?",
+                 options=["A. 甲", "B. 乙", "C. 丙", "D. 丁"], answers=["A. 甲", "C. 丙"],
+                 explanation="甲丙正确"),
+    ])
+    plan = make_plan(modules=1)
+    plan.modules[0].quiz = quiz
+    doc = store.create_document(PlanSource(input="x", mode="topic"), plan, owner)
+
+    loaded = store.get_document(doc.id, owner)
+    q = loaded.plan.modules[0].quiz.questions[0]
+    assert q.type == QuestionType.mcq_multi
+    assert q.answers == ["A. 甲", "C. 丙"]

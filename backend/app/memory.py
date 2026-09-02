@@ -166,6 +166,11 @@ async def summarize_turns(model: BaseChatModel, dropped: list[tuple[str, str]]) 
     if len(transcript) > MAX_SUMMARY_INPUT_CHARS:
         transcript = transcript[:MAX_SUMMARY_INPUT_CHARS] + "……"
 
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug("llm_request memory payload:\n[system] %s\n[human] %s", _SUMMARY_SYSTEM, transcript)
+    else:
+        logger.info("llm_request memory: chars=%d (设置 LOG_LEVEL=DEBUG 可见全文)", len(transcript))
+
     response = await model.ainvoke(
         [SystemMessage(content=_SUMMARY_SYSTEM), HumanMessage(content=transcript)]
     )

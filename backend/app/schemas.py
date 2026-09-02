@@ -27,6 +27,7 @@ class ModuleStatus(str, Enum):
 
 class QuestionType(str, Enum):
     mcq = "mcq"
+    mcq_multi = "mcq_multi"
     short = "short"
 
 
@@ -40,7 +41,8 @@ class Question(BaseModel):
     type: QuestionType
     prompt: str
     options: list[str] = Field(default_factory=list)
-    answer: str | None = None
+    answer: str | None = None          # mcq (单选) 的正确选项
+    answers: list[str] = Field(default_factory=list)  # mcq_multi (多选) 的全部正确选项
     modelAnswer: str | None = None
     keyPoints: list[str] = Field(default_factory=list)
     explanation: str = ""

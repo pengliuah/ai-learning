@@ -188,6 +188,21 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
         )
         logger.info("init_schema: annotations table added")
 
+    # 多选题支持: questions.type 增加 mcq_multi + answers 列 (幂等, 老库也升级)。
+    # 内联 CHECK 约束的默认名是 questions_type_check。
+    if conn.execute("SELECT to_regclass('public.questions')").fetchone()[0]:
+        conn.execute("ALTER TABLE questions DROP CONSTRAINT IF EXISTS questions_type_check")
+        conn.execute(
+            """ALTER TABLE questions
+               ADD CONSTRAINT questions_type_check
+               CHECK (type IN ('mcq', 'mcq_multi', 'short'))"""
+        )
+        conn.execute(
+            """ALTER TABLE questions
+               ADD COLUMN IF NOT EXISTS answers JSONB NOT NULL DEFAULT '[]'::jsonb"""
+        )
+        logger.info("init_schema: questions upgraded for mcq_multi")
+
     for table, ddl, trigger in (
         ("user_ima_settings", """CREATE TABLE user_ima_settings (
                user_id           UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

@@ -1,1 +1,8 @@
-{"appId":"com.zhixue.app","appName":"智学助手","webDir":"www","server":{"androidScheme":"https","cleartext":true},"android":{"allowMixedContent":true}}
+{
+  "appId": "com.zhixue.app",
+  "appName": "智学助手",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}

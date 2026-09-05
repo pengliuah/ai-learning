@@ -9,9 +9,10 @@
 #
 # 流程:
 #   1. 停掉旧容器
-#   2. 备份服务器上自定义的 compose / .env (每类只保留最新一份)
+#   2. 备份服务器上的 .env (每类只保留最新一份); compose 是 git 跟踪文件, 不备份
+#      不恢复 —— 否则旧备份会把新 compose 盖回旧版, 导致存储方式等更新永不生效
 #   3. 拉取最新代码到 /opt/zhixue
-#   4. 恢复自定义配置 (prod 额外校验证书文件存在)
+#   4. 恢复 .env, 环境前置校验
 #   5. 构建镜像并启动, 轮询 /api/health 健康检查 (预期 401 = 后端活着且鉴权生效)
 #
 # 首次部署前 (见 DEPLOY.md):
@@ -98,14 +99,10 @@ if docker volume inspect "$OLD_DB_VOLUME" >/dev/null 2>&1 && [ ! -f "$PGDATA_DIR
   log "旧卷数据已迁移到 $PGDATA_DIR"
 fi
 
-# ---- 2. 备份服务器自定义配置 (compose 与 .env) ----
-# git reset --hard 只覆盖跟踪文件; 这里备份的是服务器侧可能改过的文件。
-if [ -f "$APP_DIR/$COMPOSE_FILE" ]; then
-  cp -a "$APP_DIR/$COMPOSE_FILE" "$BACKUP_DIR/$COMPOSE_FILE.bak.$ts"
-  log "2/5 已备份 $COMPOSE_FILE -> $BACKUP_DIR/"
-else
-  log "2/5 $COMPOSE_FILE 不存在 (首次部署?), 跳过备份"
-fi
+# ---- 2. 备份服务器上的 .env ----
+# .env 被 gitignore, 属于服务器侧数据, 覆盖更新前必须备份。
+# compose 文件是 git 跟踪的, 不做备份/恢复: 曾经的"恢复旧备份"会把新 compose
+# 盖回旧版 (存储方式等改进永不生效, 还会反复清库), 这是刻意移除的行为。
 if [ -f "$APP_DIR/.env" ]; then
   cp -a "$APP_DIR/.env" "$BACKUP_DIR/zhixue.env.bak.$ts"
   log "2/5 已备份 .env -> $BACKUP_DIR/zhixue.env.bak.$ts"
@@ -115,6 +112,7 @@ fi
 
 # 备份清理: 每类备份只保留最新一份 (ls -t 按时间排, 当前这次的最新, 不会被删)。
 # 末尾 || true: glob 无匹配时 ls 退出码非 0, 在 pipefail 下会中断整个脚本。
+# compose 备份已不再生成, 保留 pattern 以清理历史残留文件。
 for pattern in "docker-compose.*.yml.bak.*" "zhixue.env.bak.*" "zhixue-db-*.sql.gz"; do
   ls -1t "$BACKUP_DIR"/$pattern 2>/dev/null | tail -n +2 | while IFS= read -r f; do
     rm -f "$f"
@@ -138,14 +136,11 @@ else
   log "已克隆到 $APP_DIR"
 fi
 
-# ---- 4. 恢复自定义配置 + 环境前置校验 ----
-if [ -f "$BACKUP_DIR/$COMPOSE_FILE.bak.$ts" ]; then
-  cp -a "$BACKUP_DIR/$COMPOSE_FILE.bak.$ts" "$APP_DIR/$COMPOSE_FILE"
-  log "4/5 已恢复自定义 $COMPOSE_FILE"
-fi
+# ---- 4. 恢复 .env + 环境前置校验 ----
+# compose 已由 git reset 更新为最新仓库版本, 不再从备份恢复 (见步骤 2 说明)。
 if [ -f "$BACKUP_DIR/zhixue.env.bak.$ts" ]; then
   cp -a "$BACKUP_DIR/zhixue.env.bak.$ts" "$APP_DIR/.env"
-  log "4/5 已恢复自定义 .env"
+  log "4/5 已恢复 .env"
 fi
 
 if [ "$ENV" = "prod" ]; then

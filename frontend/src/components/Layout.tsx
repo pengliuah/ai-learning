@@ -42,9 +42,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
             <Link
-              to="/settings/model"
+              to="/settings"
               className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-              title="模型设置"
+              title="设置"
             >
               <Settings className="h-4 w-4" />
             </Link>

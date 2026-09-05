@@ -12,6 +12,8 @@ import { ImaSettings } from "./pages/ImaSettings";
 import { RegenerateSettings } from "./pages/RegenerateSettings";
 import { ModelSettings } from "./pages/ModelSettings";
 import { AccountSettings } from "./pages/AccountSettings";
+import { SettingsIndex } from "./pages/SettingsIndex";
+import { DisplaySettings } from "./pages/DisplaySettings";
 import { Login } from "./pages/Login";
 import { AdminUsers } from "./pages/AdminUsers";
 import type { ReactNode } from "react";
@@ -88,6 +90,26 @@ function AppRoutes() {
           <RequireAuth>
             <Layout>
               <Coach />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <RequireAuth>
+            <Layout>
+              <SettingsIndex />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/settings/display"
+        element={
+          <RequireAuth>
+            <Layout>
+              <DisplaySettings />
             </Layout>
           </RequireAuth>
         }

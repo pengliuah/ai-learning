@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Loader2, FileText, ListChecks, Sparkles,
   CheckCircle2, XCircle, ArrowRight, RotateCcw, BookOpen,
-  BookmarkPlus, Settings, Pencil, Save, X,
+  BookmarkPlus, Settings, Pencil, Save, X, ClipboardCheck,
 } from "lucide-react";
 import { Markdown } from "../components/Markdown";
 import { Annotations } from "../components/Annotations";
@@ -198,6 +198,14 @@ export function ModuleDetail() {
           onNext={nextModule ? () => navigate(`/plans/${planId}/modules/${nextModule.id}`) : undefined}
           onRedo={() => { setRedoing(true); setTab("quiz"); }}
           onRestudy={() => { setRedoing(true); setTab("content"); }}
+          onRegrade={() => gradeQuiz.mutate(
+            { planId: planId!, moduleId: moduleId! },
+            {
+              onSuccess: () => setRedoing(false),
+              onError: (e) => toast(`重新批改失败：${(e as Error).message}`, "error"),
+            },
+          )}
+          regrading={gradeQuiz.isPending}
         />
       ) : (
         <>
@@ -439,7 +447,7 @@ export function ModuleDetail() {
 // ResultsView sub-component
 // ============================================================
 function ResultsView({
-  module, planId, moduleId, onNext, onRedo, onRestudy,
+  module, planId, moduleId, onNext, onRedo, onRestudy, onRegrade, regrading,
 }: {
   module: Module;
   planId: string;
@@ -447,6 +455,8 @@ function ResultsView({
   onNext?: () => void;
   onRedo: () => void;
   onRestudy: () => void;
+  onRegrade: () => void;
+  regrading: boolean;
 }) {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -576,6 +586,21 @@ function ResultsView({
           <BookOpen className="h-4 w-4" />
           重新学习
         </button>
+        {/* 重新批改：按当前作答再批一次；「更多」里是批改策略设置 */}
+        <ActionDropdown
+          label="重新批改"
+          icon={<ClipboardCheck className="h-4 w-4" />}
+          onAction={onRegrade}
+          busy={regrading}
+          title="按当前作答重新批改（可先在「更多」里调整批改策略）"
+          menuItems={[
+            {
+              label: "批改设置",
+              icon: <Settings className="h-4 w-4" />,
+              onClick: () => navigate("/settings/regenerate", { state: { regenType: "grade" } }),
+            },
+          ]}
+        />
         <ActionDropdown
           label="保存到 IMA"
           icon={<BookmarkPlus className="h-4 w-4" />}

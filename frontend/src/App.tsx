@@ -126,6 +126,16 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/settings/display"
+        element={
+          <RequireAuth>
+            <Layout>
+              <DisplaySettings />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
         path="/settings/ima"
         element={
           <RequireAuth>
@@ -151,16 +161,6 @@ function AppRoutes() {
           <RequireAuth>
             <Layout>
               <ModelSettings />
-            </Layout>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/settings/account"
-        element={
-          <RequireAuth>
-            <Layout>
-              <AccountSettings />
             </Layout>
           </RequireAuth>
         }

@@ -9,7 +9,7 @@
 #
 # 流程:
 #   1. 停掉旧容器
-#   2. 备份服务器上自定义的 compose / .env (保留服务器侧配置)
+#   2. 备份服务器上自定义的 compose / .env (每类只保留最新一份)
 #   3. 拉取最新代码到 /opt/zhixue
 #   4. 恢复自定义配置 (prod 额外校验证书文件存在)
 #   5. 构建镜像并启动, 轮询 /api/health 健康检查 (预期 401 = 后端活着且鉴权生效)
@@ -112,6 +112,14 @@ if [ -f "$APP_DIR/.env" ]; then
 else
   warn "$APP_DIR/.env 不存在 — 部署后将用 deploy.env.example 的默认值 (JWT_SECRET 为空, ADMIN_PASSWORD 为空!)"
 fi
+
+# 备份清理: 每类备份只保留最新一份 (ls -t 按时间排, 当前这次的最新, 不会被删)
+for pattern in "docker-compose.*.yml.bak.*" "zhixue.env.bak.*" "zhixue-db-*.sql.gz"; do
+  ls -1t "$BACKUP_DIR"/$pattern 2>/dev/null | tail -n +2 | while IFS= read -r f; do
+    rm -f "$f"
+  done
+done
+log "2/5 旧备份已清理: $BACKUP_DIR 下每类备份只保留最新一份"
 
 # ---- 3. 拉取最新代码 ----
 log "3/5 拉取最新代码到 $APP_DIR"

@@ -903,20 +903,20 @@ def put_ima_settings(req: ImaSettingsUpdate, user: dict = Depends(get_current_us
 
 @app.get("/api/settings/regenerate")
 def get_regen_settings(user: dict = Depends(get_current_user)):
-    """读取当前用户的生成策略设置（按类型：plan/content/quiz）。"""
+    """读取当前用户的生成策略设置（按类型：plan/content/quiz/grade）。"""
     row = store.get_gen_settings_row(str(user["id"]))
-    return GenSettings(plan=row["plan"], content=row["content"], quiz=row["quiz"])
+    return GenSettings(plan=row["plan"], content=row["content"], quiz=row["quiz"], grade=row["grade"])
 
 
 @app.put("/api/settings/regenerate")
 def put_regen_settings(req: GenSettingsUpdate, user: dict = Depends(get_current_user)):
     """更新当前用户的生成策略设置（仅更新提供的字段）。"""
     row = store.update_gen_settings(
-        str(user["id"]), plan=req.plan, content=req.content, quiz=req.quiz
+        str(user["id"]), plan=req.plan, content=req.content, quiz=req.quiz, grade=req.grade
     )
-    logger.info("put_regen_settings: plan=%s content=%s quiz=%s",
-                bool(row["plan"]), bool(row["content"]), bool(row["quiz"]))
-    return GenSettings(plan=row["plan"], content=row["content"], quiz=row["quiz"])
+    logger.info("put_regen_settings: plan=%s content=%s quiz=%s grade=%s",
+                bool(row["plan"]), bool(row["content"]), bool(row["quiz"]), bool(row["grade"]))
+    return GenSettings(plan=row["plan"], content=row["content"], quiz=row["quiz"], grade=row["grade"])
 
 
 @app.get("/api/settings/model")

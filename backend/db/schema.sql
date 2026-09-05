@@ -230,7 +230,7 @@ CREATE TRIGGER user_ima_settings_set_updated_at
 -- ---------------------------------------------------------------------------
 CREATE TABLE user_gen_settings (
     user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    gen_type          TEXT NOT NULL CHECK (gen_type IN ('plan', 'content', 'quiz')),
+    gen_type          TEXT NOT NULL CHECK (gen_type IN ('plan', 'content', 'quiz', 'grade')),
     strategy          TEXT NOT NULL DEFAULT '',
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, gen_type)

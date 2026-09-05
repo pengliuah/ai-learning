@@ -126,12 +126,14 @@ def test_settings_are_per_user(tmp_store, admin_user, normal_user):
     assert store.get_model_settings_row(admin_id)["model"] != "user-model" or True
 
     store.update_ima_settings(user_id, client_id="cid-user")
-    store.update_gen_settings(user_id, plan="自定义策略")
+    store.update_gen_settings(user_id, plan="自定义策略", grade="按步骤给分")
 
     assert store.get_ima_settings_row(user_id)["ima_client_id"] == "cid-user"
     assert store.get_ima_settings_row(admin_id)["ima_client_id"] == ""
     assert store.get_gen_settings_row(user_id)["plan"] == "自定义策略"
+    assert store.get_gen_settings_row(user_id)["grade"] == "按步骤给分"
     assert store.get_gen_settings_row(admin_id)["plan"] == ""
+    assert store.get_gen_settings_row(admin_id)["grade"] == ""
 
 
 def test_token_usage_record_and_summary(tmp_store, admin_user, normal_user):

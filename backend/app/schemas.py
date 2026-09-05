@@ -185,12 +185,14 @@ class GenSettings(BaseModel):
     plan: str = ""
     content: str = ""
     quiz: str = ""
+    grade: str = ""
 
 
 class GenSettingsUpdate(BaseModel):
     plan: str | None = None
     content: str | None = None
     quiz: str | None = None
+    grade: str | None = None
 
 
 class ModelSettings(BaseModel):

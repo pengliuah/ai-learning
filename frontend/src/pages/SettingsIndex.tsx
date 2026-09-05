@@ -20,7 +20,7 @@ const ITEMS = [
     to: "/settings/regenerate",
     icon: RefreshCw,
     title: "重新生成设置",
-    desc: "计划 / 内容 / 测验的生成策略提示词",
+    desc: "计划 / 内容 / 测验的生成策略与批改评分策略提示词",
   },
   {
     to: "/settings/ima",

@@ -484,7 +484,7 @@ def update_ima_settings(
 # Gen settings (per-user, per-type: plan / content / quiz strategy prompts)
 # ---------------------------------------------------------------------------
 
-_GEN_TYPES = ("plan", "content", "quiz")
+_GEN_TYPES = ("plan", "content", "quiz", "grade")
 
 
 def get_gen_settings_row(user_id: str) -> dict:
@@ -512,9 +512,10 @@ def update_gen_settings(
     plan: str | None = None,
     content: str | None = None,
     quiz: str | None = None,
+    grade: str | None = None,
 ) -> dict:
     """Update specific gen-strategy fields (only non-None are set)."""
-    updates = {"plan": plan, "content": content, "quiz": quiz}
+    updates = {"plan": plan, "content": content, "quiz": quiz, "grade": grade}
     with db_conn() as conn:
         for gt, val in updates.items():
             if val is not None:

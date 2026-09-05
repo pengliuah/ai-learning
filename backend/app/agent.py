@@ -408,6 +408,7 @@ class LearningCoach:
             f"计划：{plan.title}\n模块：{module.title}\n\n"
             + "\n\n".join(lines)
             + "\n\n请逐题评分并给出整体评估。"
+            + _gen_strategy_suffix("grade", user_id)
         )
         result = self._invoke_structured("grader", user, user_id)
         if not result.maxScore:

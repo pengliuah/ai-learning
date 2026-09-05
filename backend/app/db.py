@@ -203,6 +203,16 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
         )
         logger.info("init_schema: questions upgraded for mcq_multi")
 
+    # 批改策略: user_gen_settings.gen_type 增加 grade (幂等, 老库也升级)。
+    if conn.execute("SELECT to_regclass('public.user_gen_settings')").fetchone()[0]:
+        conn.execute("ALTER TABLE user_gen_settings DROP CONSTRAINT IF EXISTS user_gen_settings_gen_type_check")
+        conn.execute(
+            """ALTER TABLE user_gen_settings
+               ADD CONSTRAINT user_gen_settings_gen_type_check
+               CHECK (gen_type IN ('plan', 'content', 'quiz', 'grade'))"""
+        )
+        logger.info("init_schema: user_gen_settings upgraded for grade strategy")
+
     for table, ddl, trigger in (
         ("user_ima_settings", """CREATE TABLE user_ima_settings (
                user_id           UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -213,7 +223,7 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
            )""", "user_ima_settings"),
         ("user_gen_settings", """CREATE TABLE user_gen_settings (
                user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-               gen_type          TEXT NOT NULL CHECK (gen_type IN ('plan', 'content', 'quiz')),
+               gen_type          TEXT NOT NULL CHECK (gen_type IN ('plan', 'content', 'quiz', 'grade')),
                strategy          TEXT NOT NULL DEFAULT '',
                updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
                PRIMARY KEY (user_id, gen_type)

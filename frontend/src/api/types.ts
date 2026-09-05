@@ -113,12 +113,14 @@ export interface GenSettings {
   plan: string;
   content: string;
   quiz: string;
+  grade: string;
 }
 
 export interface GenSettingsUpdate {
   plan?: string | null;
   content?: string | null;
   quiz?: string | null;
+  grade?: string | null;
 }
 
 export interface ModelSettings {

@@ -4,14 +4,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Loader2, FileText, ListChecks, Sparkles,
   CheckCircle2, XCircle, ArrowRight, RotateCcw, BookOpen,
-  BookmarkPlus, Settings,
+  BookmarkPlus, Settings, Pencil, Save, X,
 } from "lucide-react";
 import { Markdown } from "../components/Markdown";
 import { Annotations } from "../components/Annotations";
 import { ActionBar } from "../components/ActionBar";
 import { ActionDropdown } from "../components/ActionDropdown";
 import { useToast } from "../components/Toast";
-import { usePlan, useGenerateQuiz, useGradeQuiz, useSaveAnswers, useSaveToIma, PLAN_KEYS } from "../hooks/usePlans";
+import { usePlan, useGenerateQuiz, useGradeQuiz, useSaveAnswers, useSaveToIma, useUpdateContent, PLAN_KEYS } from "../hooks/usePlans";
 import { api } from "../api/client";
 import { StatusBadge, DifficultyBadge } from "../components/StatusBadge";
 import type { Module, Document } from "../api/types";
@@ -31,6 +31,9 @@ export function ModuleDetail() {
   const [streamError, setStreamError] = useState("");
   // 批注作用的内容容器（正文 + 关键要点）
   const contentAreaRef = useRef<HTMLDivElement | null>(null);
+  // 内容手工编辑（markdown 源码）
+  const [editingContent, setEditingContent] = useState(false);
+  const [contentDraft, setContentDraft] = useState("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
   // answersRef mirrors the latest answers so the debounced autosave always
   // persists the most recent value (avoids the stale-closure that made the
@@ -44,6 +47,7 @@ export function ModuleDetail() {
 
   const generateQuiz = useGenerateQuiz();
   const saveToIma = useSaveToIma();
+  const updateContent = useUpdateContent();
   const { toast } = useToast();
 
   const handleSaveToIma = (contentType: "content" | "quiz") => {
@@ -99,6 +103,7 @@ export function ModuleDetail() {
     setStreaming(true);
     setStreamText("");
     setStreamError("");
+    setEditingContent(false);
     try {
       const updatedDoc = await api.streamContent(planId!, moduleId!, (delta) => {
         setStreamText((prev) => prev + delta);
@@ -132,6 +137,26 @@ export function ModuleDetail() {
   const hasContent = !!module.content;
   const hasQuiz = !!module.quiz;
   const hasResult = !!module.result;
+
+  const startEditContent = () => {
+    setContentDraft(module.content?.markdown ?? "");
+    setEditingContent(true);
+  };
+
+  const handleSaveContent = () => {
+    if (!contentDraft.trim()) return;
+    updateContent.mutate(
+      { planId: planId!, moduleId: moduleId!, markdown: contentDraft },
+      {
+        onSuccess: () => {
+          setEditingContent(false);
+          toast("内容已保存", "success");
+        },
+        onError: (e) => toast(`保存失败：${(e as Error).message}`, "error"),
+      },
+    );
+  };
+
   const nextModule = doc.plan.modules
     .slice(doc.plan.modules.findIndex((m) => m.id === moduleId) + 1)
     .find((m) => m.status !== "completed");
@@ -227,8 +252,47 @@ export function ModuleDetail() {
                 <p className="text-sm text-red-600 dark:text-red-400">生成失败：{streamError}</p>
               )}
 
-              {hasContent && !streaming && (
+              {hasContent && !streaming && editingContent && (
+                <div>
+                  <textarea
+                    value={contentDraft}
+                    onChange={(e) => setContentDraft(e.target.value)}
+                    placeholder="支持 Markdown 语法"
+                    className="w-full rounded-md border border-gray-300 bg-white p-3 font-mono text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                    style={{ minHeight: "60vh" }}
+                  />
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      onClick={handleSaveContent}
+                      disabled={updateContent.isPending || !contentDraft.trim()}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 dark:bg-indigo-500 dark:hover:bg-indigo-600"
+                    >
+                      {updateContent.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      保存
+                    </button>
+                    <button
+                      onClick={() => setEditingContent(false)}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                    >
+                      <X className="h-4 w-4" />
+                      取消
+                    </button>
+                    <span className="text-xs text-gray-400 dark:text-gray-500">关键要点不会被修改；重新生成内容会覆盖手工编辑</span>
+                  </div>
+                </div>
+              )}
+
+              {hasContent && !streaming && !editingContent && (
                 <div className="relative">
+                  <div className="mb-2 flex justify-end">
+                    <button
+                      onClick={startEditContent}
+                      className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      编辑
+                    </button>
+                  </div>
                   <div ref={contentAreaRef}>
                     <div className="prose prose-sm max-w-none dark:prose-invert">
                       <Markdown>{module.content!.markdown}</Markdown>

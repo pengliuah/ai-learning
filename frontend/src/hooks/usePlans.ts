@@ -145,6 +145,25 @@ export function usePatchModule() {
   });
 }
 
+// 手工编辑学习内容正文：后端返回完整 Document，直接替换缓存即可
+export function useUpdateContent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      planId,
+      moduleId,
+      markdown,
+    }: {
+      planId: string;
+      moduleId: string;
+      markdown: string;
+    }) => api.updateContent(planId, moduleId, markdown),
+    onSuccess: (doc) => {
+      qc.setQueryData(PLAN_KEYS.detail(doc.id), doc);
+    },
+  });
+}
+
 
 export function useSaveToIma() {
   return useMutation({

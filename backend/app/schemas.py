@@ -129,6 +129,11 @@ class ModuleStatusPatch(BaseModel):
     status: ModuleStatus
 
 
+# 手工编辑学习内容正文的请求体（只改 markdown，关键要点保持不变）
+class ContentUpdate(BaseModel):
+    markdown: str
+
+
 # 保存（合并）测验作答草稿的请求体
 class SaveAnswersRequest(BaseModel):
     answers: dict[str, str]

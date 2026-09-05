@@ -254,6 +254,14 @@ export const api = {
   getContent: (planId: string, moduleId: string) =>
     json<Content>(`/plans/${planId}/modules/${moduleId}/content`),
 
+  // 手工编辑学习内容正文（只改 markdown，关键要点不变），返回完整 Document
+  updateContent: (planId: string, moduleId: string, markdown: string) =>
+    json<Document>(`/plans/${planId}/modules/${moduleId}/content`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markdown }),
+    }),
+
   saveAnswers: (planId: string, moduleId: string, answers: Record<string, string>) =>
     json<Document>(`/plans/${planId}/modules/${moduleId}/answers`, {
       method: "PUT",

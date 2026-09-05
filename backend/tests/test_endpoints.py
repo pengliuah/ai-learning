@@ -234,6 +234,40 @@ def test_generate_content_unconfigured_503(unconfigured_client, seeded_doc):
     assert unconfigured_client.post(f"/api/plans/{seeded_doc.id}/modules/{mid}/content").status_code == 503
 
 
+# ----- edit content (PUT) -----
+
+def test_edit_content(client, fake_coach, seeded_doc):
+    mid = seeded_doc.plan.modules[0].id
+    plan_id = seeded_doc.id
+    # 先生成内容
+    assert client.post(f"/api/plans/{plan_id}/modules/{mid}/content").status_code == 200
+
+    r = client.put(f"/api/plans/{plan_id}/modules/{mid}/content",
+                   json={"markdown": "# 手工编辑\n\n改过的正文"})
+    assert r.status_code == 200
+    module = next(m for m in r.json()["plan"]["modules"] if m["id"] == mid)
+    assert module["content"]["markdown"] == "# 手工编辑\n\n改过的正文"
+    # 关键要点保持不变
+    assert module["content"]["keyTakeaways"] == ["point one", "point two"]
+    # 持久化 -> 再读一次
+    g = client.get(f"/api/plans/{plan_id}/modules/{mid}/content")
+    assert g.json()["markdown"] == "# 手工编辑\n\n改过的正文"
+
+
+def test_edit_content_rejects_blank(client, fake_coach, seeded_doc):
+    mid = seeded_doc.plan.modules[0].id
+    plan_id = seeded_doc.id
+    assert client.post(f"/api/plans/{plan_id}/modules/{mid}/content").status_code == 200
+    assert client.put(f"/api/plans/{plan_id}/modules/{mid}/content",
+                      json={"markdown": "   "}).status_code == 400
+
+
+def test_edit_content_404_when_no_content(client, seeded_doc):
+    mid = seeded_doc.plan.modules[0].id
+    assert client.put(f"/api/plans/{seeded_doc.id}/modules/{mid}/content",
+                      json={"markdown": "x"}).status_code == 400
+
+
 # ----- patch module status -----
 
 def test_patch_module_status(client, seeded_doc):

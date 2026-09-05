@@ -38,6 +38,7 @@ from .schemas import (
     AnswersState,
     ChangePasswordRequest,
     CoachRequest,
+    ContentUpdate,
     GenSettings,
     GenSettingsUpdate,
     ImaSettings,
@@ -678,6 +679,43 @@ def patch_module_status(plan_id: str, module_id: str, patch: ModuleStatusPatch, 
     def mutate(m):
         m.status = patch.status
 
+    return store.update_module(plan_id, module_id, mutate, str(user["id"]))
+
+
+@app.put("/api/plans/{plan_id}/modules/{module_id}/content")
+def put_module_content(plan_id: str, module_id: str, req: ContentUpdate, user: dict = Depends(get_current_user)):
+    """手工编辑某模块学习内容的 markdown 正文。
+
+    只替换 ``content.markdown``，关键要点（keyTakeaways）保持不变。
+    典型用途：用户对 AI 生成的内容做增删改后保存。
+
+    路径参数:
+        - plan_id (str): 计划 id。
+        - module_id (str): 模块 id。
+
+    请求体 ``ContentUpdate``:
+        - ``markdown`` (str): 编辑后的正文（去除首尾空白后不允许为空）。
+
+    返回:
+        200 ``Document``: 更新后的完整计划文档。
+
+    错误:
+        - 404: 计划或模块不存在。
+        - 400: 模块尚未生成学习内容，或正文为空。
+    """
+    doc = _get_doc(plan_id, str(user["id"]))
+    module = _get_module(doc, module_id)
+    if module.content is None:
+        raise HTTPException(status_code=400, detail="该模块还没有学习内容，请先生成")
+    markdown = req.markdown.strip()
+    if not markdown:
+        raise HTTPException(status_code=400, detail="内容不能为空")
+
+    def mutate(m):
+        m.content.markdown = markdown
+
+    logger.info("put_module_content: plan=%s module=%s markdown_chars=%d",
+                plan_id, module_id, len(markdown))
     return store.update_module(plan_id, module_id, mutate, str(user["id"]))
 
 

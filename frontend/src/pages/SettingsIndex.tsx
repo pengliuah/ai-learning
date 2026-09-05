@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import {
-  ArrowLeft, Bookmark, BookmarkPlus, ChevronRight, KeyRound, RefreshCw, Settings2, Type,
+  ArrowLeft, BookmarkPlus, ChevronRight, KeyRound, RefreshCw, Settings2, Type,
 } from "lucide-react";
 
 const ITEMS = [
@@ -33,12 +33,6 @@ const ITEMS = [
     icon: KeyRound,
     title: "修改密码",
     desc: "修改登录密码，修改后所有设备需重新登录",
-  },
-  {
-    to: "/bookmarks",
-    icon: Bookmark,
-    title: "我的书签",
-    desc: "学习内容里收藏的书签，点击跳转到对应内容",
   },
 ];
 

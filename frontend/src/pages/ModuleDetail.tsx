@@ -26,9 +26,12 @@ export function ModuleDetail() {
   const module = doc?.plan.modules.find((m) => m.id === moduleId);
   // 从书签列表跳转过来时要定位的书签 id
   const focusBookmarkId = searchParams.get("bookmark") ?? undefined;
+  // 带书签跳转参数进入时，即使是已批改完成的模块也先展示内容视图，
+  // 否则会落在测验结果页，书签无处定位
+  const jumpToBookmark = !!focusBookmarkId;
 
   const [tab, setTab] = useState<"content" | "quiz">("content");
-  const [redoing, setRedoing] = useState(false);
+  const [redoing, setRedoing] = useState(jumpToBookmark);
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState("");
   const [streamError, setStreamError] = useState("");
@@ -213,25 +216,36 @@ export function ModuleDetail() {
       ) : (
         <>
           {/* Tabs */}
-          <div className="mb-4 inline-flex rounded-md border border-gray-200 p-0.5 dark:border-gray-700">
-            <button
-              onClick={() => setTab("content")}
-              className={`inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition ${
-                tab === "content" ? "bg-indigo-600 text-white dark:bg-indigo-500" : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
-              }`}
-            >
-              <FileText className="h-3.5 w-3.5" />
-              学习内容
-            </button>
-            <button
-              onClick={() => setTab("quiz")}
-              className={`inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition ${
-                tab === "quiz" ? "bg-indigo-600 text-white dark:bg-indigo-500" : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
-              }`}
-            >
-              <ListChecks className="h-3.5 w-3.5" />
-              测验
-            </button>
+          <div className="mb-4 flex items-center justify-between">
+            <div className="inline-flex rounded-md border border-gray-200 p-0.5 dark:border-gray-700">
+              <button
+                onClick={() => setTab("content")}
+                className={`inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition ${
+                  tab === "content" ? "bg-indigo-600 text-white dark:bg-indigo-500" : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
+                }`}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                学习内容
+              </button>
+              <button
+                onClick={() => setTab("quiz")}
+                className={`inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition ${
+                  tab === "quiz" ? "bg-indigo-600 text-white dark:bg-indigo-500" : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
+                }`}
+              >
+                <ListChecks className="h-3.5 w-3.5" />
+                测验
+              </button>
+            </div>
+            {hasResult && (
+              <button
+                onClick={() => setRedoing(false)}
+                className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                返回批改结果
+              </button>
+            )}
           </div>
 
           {/* Content tab */}

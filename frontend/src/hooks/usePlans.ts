@@ -164,6 +164,20 @@ export function useUpdateContent() {
   });
 }
 
+// 首页计划列表拖拽排序：本地先重排（乐观更新），保存失败回滚重取
+export function useReorderPlans() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (planIds: string[]) => api.reorderPlans(planIds),
+    onSuccess: (items) => {
+      qc.setQueryData(PLAN_KEYS.list, items);
+    },
+    onError: () => {
+      qc.invalidateQueries({ queryKey: PLAN_KEYS.list });
+    },
+  });
+}
+
 
 export function useSaveToIma() {
   return useMutation({

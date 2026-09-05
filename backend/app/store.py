@@ -277,7 +277,7 @@ def _sync_module(conn, plan_id: str, module: Module) -> None:
 def list_documents(user_id: str) -> list[Document]:
     with db_conn() as conn:
         ids = [r["id"] for r in conn.execute(
-            "SELECT id FROM plans WHERE user_id = %s ORDER BY created_at",
+            "SELECT id FROM plans WHERE user_id = %s ORDER BY sort_order, created_at",
             (user_id,)).fetchall()]
         docs = [_load_document(conn, str(pid), user_id) for pid in ids]
     logger.debug("list_documents: user=%s count=%d", user_id, len(docs))
@@ -298,7 +298,7 @@ def list_items(user_id: str, q: str | None = None) -> list[PlanListItem]:
               LEFT JOIN modules m ON m.plan_id = p.id
               {where}
               GROUP BY p.id, p.title, p.created_at
-              ORDER BY p.created_at"""
+              ORDER BY p.sort_order, p.created_at"""
     with db_conn() as conn:
         rows = conn.execute(sql, params).fetchall()
     items = [
@@ -333,8 +333,10 @@ def save_document(doc: Document, user_id: str) -> Document:
         conn.execute(
             """INSERT INTO plans
                    (id, user_id, title, goal, summary, level, total_minutes,
-                    source_input, source_mode, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    source_input, source_mode, sort_order, created_at, updated_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
+                       COALESCE((SELECT MAX(sort_order) + 1 FROM plans WHERE user_id = %s), 0),
+                       %s, %s)
                ON CONFLICT (id) DO UPDATE SET
                    title = EXCLUDED.title, goal = EXCLUDED.goal,
                    summary = EXCLUDED.summary, level = EXCLUDED.level,
@@ -343,7 +345,7 @@ def save_document(doc: Document, user_id: str) -> Document:
                    source_mode = EXCLUDED.source_mode""",
             (doc.id, user_id, p.title, p.goal, p.summary, p.level.value,
              p.totalMinutes, doc.source.input, doc.source.mode,
-             doc.createdAt, doc.updatedAt),
+             user_id, doc.createdAt, doc.updatedAt),
         )
         # Replace modules (cascade deletes old children).
         conn.execute("DELETE FROM modules WHERE plan_id = %s", (doc.id,))
@@ -406,6 +408,20 @@ def update_module(
         # Reload to pick up the trigger-set updated_at and any DB defaults.
         doc = _load_document(conn, plan_id, user_id)
     return doc
+
+
+def reorder_plans(plan_ids: list[str], user_id: str) -> None:
+    """持久化学习计划列表的手动排序（首页拖拽排序）。
+
+    ``plan_ids`` 顺序即新顺序；只更新当前用户的 ``plans.sort_order``。
+    """
+    with db_conn() as conn:
+        for pos, plan_id in enumerate(plan_ids):
+            conn.execute(
+                "UPDATE plans SET sort_order = %s WHERE id::text = %s AND user_id::text = %s",
+                (pos, plan_id, user_id),
+            )
+    logger.debug("reorder_plans: user=%s count=%d", user_id, len(plan_ids))
 
 
 # ---------------------------------------------------------------------------

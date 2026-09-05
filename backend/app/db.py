@@ -275,6 +275,17 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
         )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_plans_user ON plans (user_id)")
 
+    # 首页计划列表手动排序：加列并对存量数据一次性回填（按 created_at）。
+    # 回填只作用于「全部计划仍是默认 0」的用户，避免覆盖已拖拽过的顺序。
+    conn.execute("ALTER TABLE plans ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0")
+    conn.execute(
+        """UPDATE plans p SET sort_order = o.pos
+           FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at, id) - 1 AS pos
+                 FROM plans) o
+           WHERE p.id = o.id
+             AND p.user_id IN (SELECT user_id FROM plans GROUP BY user_id HAVING BOOL_AND(sort_order = 0))"""
+    )
+
     # Move old global single-row settings to the admin's per-user rows, then
     # drop the old tables. Guarded by to_regclass so fresh DBs skip this.
     if conn.execute("SELECT to_regclass('public.model_settings')").fetchone()[0]:

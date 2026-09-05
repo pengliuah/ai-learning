@@ -50,6 +50,7 @@ from .schemas import (
     ModuleStatusPatch,
     PlanCreateRequest,
     PlanSource,
+    PlansOrderUpdate,
     RefreshRequest,
     SaveAnswersRequest,
     SaveToImaRequest,
@@ -717,6 +718,31 @@ def put_module_content(plan_id: str, module_id: str, req: ContentUpdate, user: d
     logger.info("put_module_content: plan=%s module=%s markdown_chars=%d",
                 plan_id, module_id, len(markdown))
     return store.update_module(plan_id, module_id, mutate, str(user["id"]))
+
+
+@app.put("/api/plans/order")
+def put_plans_order(req: PlansOrderUpdate, user: dict = Depends(get_current_user)):
+    """按新顺序持久化学习计划列表（首页拖拽排序）。
+
+    只更新当前用户的 ``plans.sort_order``，列表读取按它排序，
+    计划内容与模块数据均不受影响。
+
+    请求体 ``PlansOrderUpdate``:
+        - ``planIds`` (list[str]): 当前用户的全部计划 id，按新顺序排列。
+
+    返回:
+        200 ``list[PlanListItem]``: 重排后的计划概要列表。
+
+    错误:
+        - 400: planIds 与当前用户的计划 id 集合不完全一致。
+    """
+    uid = str(user["id"])
+    current_ids = {item.id for item in store.list_items(uid)}
+    if len(req.planIds) != len(current_ids) or set(req.planIds) != current_ids:
+        raise HTTPException(status_code=400, detail="planIds 必须恰好包含当前用户的全部计划 id")
+    logger.info("put_plans_order: user=%s plans=%d", user["username"], len(req.planIds))
+    store.reorder_plans(req.planIds, uid)
+    return store.list_items(uid)
 
 
 # ---------------------------------------------------------------------------

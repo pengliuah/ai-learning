@@ -81,6 +81,7 @@ CREATE TABLE plans (
     source_input  TEXT NOT NULL,
     source_mode   TEXT NOT NULL DEFAULT 'topic'
                   CHECK (source_mode IN ('topic', 'materials')),
+    sort_order    INTEGER NOT NULL DEFAULT 0,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from _factories import make_plan, make_quiz, make_result
 from conftest import auth_headers
+from app import store
+from app.schemas import PlanSource
 
 
 def _sse_done(r):
@@ -268,7 +270,42 @@ def test_edit_content_404_when_no_content(client, seeded_doc):
                       json={"markdown": "x"}).status_code == 400
 
 
-# ----- patch module status -----
+# ----- reorder plans (home page drag sorting) -----
+
+def test_reorder_plans(client, admin_user, seeded_doc):
+    # seeded_doc 之外再造一份计划，保证至少两份
+    second = store.create_document(
+        PlanSource(input="another topic", mode="topic"), make_plan(modules=2), str(admin_user["id"]))
+    ids = [seeded_doc.id, second.id]
+
+    new_order = list(reversed(ids))
+    r = client.put("/api/plans/order", json={"planIds": new_order})
+    assert r.status_code == 200
+    assert [item["id"] for item in r.json()] == new_order
+    # 列表读取也按新顺序
+    g = client.get("/api/plans")
+    assert [item["id"] for item in g.json()] == new_order
+
+
+def test_reorder_plans_rejects_wrong_ids(client, admin_user, seeded_doc):
+    second = store.create_document(
+        PlanSource(input="another topic", mode="topic"), make_plan(modules=1), str(admin_user["id"]))
+    # 少了一份
+    r = client.put("/api/plans/order", json={"planIds": [seeded_doc.id]})
+    assert r.status_code == 400
+    # 含不存在的 id
+    r = client.put("/api/plans/order",
+                   json={"planIds": [seeded_doc.id, second.id, "00000000-0000-0000-0000-000000000000"]})
+    assert r.status_code == 400
+
+
+def test_reorder_plans_is_user_scoped(client, normal_user, seeded_doc):
+    """用户只能重排自己的计划，他人计划 id 会被判为非法集合。"""
+    other = store.create_document(
+        PlanSource(input="other user topic", mode="topic"), make_plan(modules=1), str(normal_user["id"]))
+    r = client.put("/api/plans/order", json={"planIds": [seeded_doc.id, other.id]})
+    assert r.status_code == 400
+
 
 def test_patch_module_status(client, seeded_doc):
     mid = seeded_doc.plan.modules[0].id

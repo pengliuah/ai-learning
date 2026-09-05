@@ -231,6 +231,14 @@ export const api = {
   listPlans: (q?: string) =>
     json<PlanListItem[]>(`/plans${q ? `?q=${encodeURIComponent(q)}` : ""}`),
 
+  // 首页计划列表拖拽排序：按新顺序提交当前用户的全部计划 id
+  reorderPlans: (planIds: string[]) =>
+    json<PlanListItem[]>(`/plans/order`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planIds }),
+    }),
+
   getPlan: (id: string) => json<Document>(`/plans/${id}`),
 
   createPlan: (input: string, mode: "topic" | "materials") =>

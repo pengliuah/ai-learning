@@ -134,6 +134,11 @@ class ContentUpdate(BaseModel):
     markdown: str
 
 
+# 学习计划列表拖拽排序：按新顺序提交当前用户的全部计划 id
+class PlansOrderUpdate(BaseModel):
+    planIds: list[str]
+
+
 # 保存（合并）测验作答草稿的请求体
 class SaveAnswersRequest(BaseModel):
     answers: dict[str, str]

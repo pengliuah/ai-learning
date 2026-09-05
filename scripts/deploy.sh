@@ -113,11 +113,12 @@ else
   warn "$APP_DIR/.env 不存在 — 部署后将用 deploy.env.example 的默认值 (JWT_SECRET 为空, ADMIN_PASSWORD 为空!)"
 fi
 
-# 备份清理: 每类备份只保留最新一份 (ls -t 按时间排, 当前这次的最新, 不会被删)
+# 备份清理: 每类备份只保留最新一份 (ls -t 按时间排, 当前这次的最新, 不会被删)。
+# 末尾 || true: glob 无匹配时 ls 退出码非 0, 在 pipefail 下会中断整个脚本。
 for pattern in "docker-compose.*.yml.bak.*" "zhixue.env.bak.*" "zhixue-db-*.sql.gz"; do
   ls -1t "$BACKUP_DIR"/$pattern 2>/dev/null | tail -n +2 | while IFS= read -r f; do
     rm -f "$f"
-  done
+  done || true
 done
 log "2/5 旧备份已清理: $BACKUP_DIR 下每类备份只保留最新一份"
 

@@ -51,9 +51,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
             {user && (
               <span className="flex items-center gap-1 pl-1 text-sm text-gray-500 dark:text-gray-400">
                 <Link
-                  to="/settings/account"
+                  to="/bookmarks"
                   className="max-w-24 truncate rounded px-1 py-0.5 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-                  title="账号设置（修改密码）"
+                  title="我的书签"
                 >
                   {user.username}
                 </Link>

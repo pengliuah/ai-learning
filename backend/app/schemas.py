@@ -293,6 +293,18 @@ class AnnotationOut(BaseModel):
     updatedAt: datetime | None = None
 
 
+# 书签列表项（跨计划/模块聚合，点击跳转到对应内容）
+class BookmarkOut(BaseModel):
+    id: str
+    planId: str
+    planTitle: str
+    moduleId: str
+    moduleTitle: str | None = None
+    quote: str
+    note: str
+    createdAt: datetime | None = None
+
+
 class AnnotationCreate(BaseModel):
     quote: str
     prefix: str = ""

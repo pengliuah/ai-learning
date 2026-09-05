@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { Annotation } from "../api/types";
+import type { Annotation, BookmarkItem } from "../api/types";
 
 export const PLAN_KEYS = {
   list: ["plans"] as const,
@@ -9,7 +9,31 @@ export const PLAN_KEYS = {
 
 export const ANNOTATION_KEYS = {
   module: (planId: string, moduleId: string) => ["annotations", planId, moduleId] as const,
+  all: ["bookmarks"] as const,
 };
+
+// 书签列表（跨计划/模块聚合）
+export function useBookmarks() {
+  return useQuery({
+    queryKey: ANNOTATION_KEYS.all,
+    queryFn: () => api.listBookmarks(),
+  });
+}
+
+// 从书签列表删除：乐观移除该项，失败回滚重取
+export function useDeleteBookmark() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ planId, annotationId }: { planId: string; annotationId: string }) =>
+      api.deleteAnnotation(planId, annotationId),
+    onSuccess: (_data, variables) => {
+      qc.setQueryData<BookmarkItem[] | undefined>(ANNOTATION_KEYS.all, (old) =>
+        (old ?? []).filter((b) => b.id !== variables.annotationId),
+      );
+      qc.invalidateQueries({ queryKey: ANNOTATION_KEYS.all });
+    },
+  });
+}
 
 export function useAnnotations(planId: string, moduleId: string) {
   return useQuery({

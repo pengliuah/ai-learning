@@ -1,4 +1,4 @@
-import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary, Annotation, SaveToImaRequest, SaveToImaResponse, User, AuthResponse, AdminUserCreateInput } from "./types";
+import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary, Annotation, BookmarkItem, SaveToImaRequest, SaveToImaResponse, User, AuthResponse, AdminUserCreateInput } from "./types";
 
 /**
  * 后端 API 基址。
@@ -269,6 +269,9 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ markdown }),
     }),
+
+  // 书签列表：当前用户跨计划/模块的全部书签
+  listBookmarks: () => json<BookmarkItem[]>(`/annotations`),
 
   saveAnswers: (planId: string, moduleId: string, answers: Record<string, string>) =>
     json<Document>(`/plans/${planId}/modules/${moduleId}/answers`, {

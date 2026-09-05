@@ -917,6 +917,32 @@ def list_annotations(user_id: str, plan_id: str, module_key: str) -> list[dict]:
     return [_annotation_public(r) for r in rows]
 
 
+def list_all_annotations(user_id: str) -> list[dict]:
+    """The user's annotations across all plans/modules (bookmark list page).
+
+    Each row carries plan/module titles for display; newest first. A missing
+    module row (content regenerated away) keeps the annotation with a null
+    module title.
+    """
+    with db_conn() as conn:
+        rows = conn.execute(
+            """SELECT a.*, p.title AS plan_title, m.title AS module_title
+               FROM annotations a
+               JOIN plans p ON p.id = a.plan_id
+               LEFT JOIN modules m ON m.plan_id = a.plan_id AND m.key = a.module_key
+               WHERE a.user_id::text = %s
+               ORDER BY a.created_at DESC, a.id DESC""",
+            (user_id,),
+        ).fetchall()
+    items = []
+    for r in rows:
+        d = _annotation_public(r)
+        d["plan_title"] = r["plan_title"]
+        d["module_title"] = r["module_title"]
+        items.append(d)
+    return items
+
+
 def create_annotation(
     user_id: str,
     plan_id: str,

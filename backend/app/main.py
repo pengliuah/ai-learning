@@ -36,6 +36,7 @@ from .schemas import (
     AnnotationOut,
     AnnotationUpdate,
     AnswersState,
+    BookmarkOut,
     ChangePasswordRequest,
     CoachRequest,
     ContentUpdate,
@@ -765,6 +766,34 @@ def list_annotations(plan_id: str, module_id: str, user: dict = Depends(get_curr
         AnnotationOut(**a)
         for a in store.list_annotations(uid, plan_id, module_id)
     ]
+
+
+@app.get("/api/annotations")
+def list_bookmarks(user: dict = Depends(get_current_user)):
+    """列出当前用户的全部书签（跨计划/模块聚合，供书签列表页使用）。
+
+    每项附带计划/模块标题；点击书签跳转
+    ``/plans/{planId}/modules/{moduleId}?bookmark={id}`` 即可定位到原文。
+
+    返回:
+        200 list[BookmarkOut]: 按创建时间倒序。
+    """
+    uid = str(user["id"])
+    items = [
+        BookmarkOut(
+            id=a["id"],
+            planId=a["planId"],
+            planTitle=a["plan_title"],
+            moduleId=a["moduleKey"],
+            moduleTitle=a.get("module_title"),
+            quote=a["quote"],
+            note=a["note"],
+            createdAt=a["createdAt"],
+        )
+        for a in store.list_all_annotations(uid)
+    ]
+    logger.info("list_bookmarks: user=%s count=%d", user["username"], len(items))
+    return items
 
 
 @app.post("/api/plans/{plan_id}/modules/{module_id}/annotations")

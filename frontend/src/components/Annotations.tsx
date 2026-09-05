@@ -1,10 +1,10 @@
 /**
- * Word 式内容批注：选中文本 → 浮出「添加批注」→ 黄色高亮 → 点击弹卡片 → 批注列表。
+ * 内容书签：选中文本 → 浮出「添加书签」→ 黄色高亮 → 点击弹卡片 → 书签列表。
  *
  * 锚定模型：{quote, prefix, suffix} 三元组在渲染后 DOM 的可见文本里重定位，
  * 与 react-markdown 输出的 DOM 结构解耦（免疫 wrapUnwrappedMath 等源文本变换）。
  * 高亮用 CSS Custom Highlight API（不改 React 管理的 DOM），不支持的浏览器
- * 静默降级为仅列表。内容重新生成后找不到原文的批注标记为失效，数据保留。
+ * 静默降级为仅列表。内容重新生成后找不到原文的书签标记为失效，数据保留。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Loader2, MessageSquarePlus, Pencil, StickyNote, Trash2, X } from "lucide-react";
@@ -178,15 +178,17 @@ function findScrollableAncestor(el: HTMLElement | null): HTMLElement | null {
 // --- 组件 ------------------------------------------------------------------
 
 interface AnnotationsProps {
-  /** 批注作用的内容容器（含正文与关键要点）。 */
+  /** 书签作用的内容容器（含正文与关键要点）。 */
   containerRef: React.RefObject<HTMLElement | null>;
   planId: string;
   moduleId: string;
   /** 内容标识（如 markdown 原文）：变化时重新锚定高亮。 */
   anchorKey?: string;
+  /** 从书签列表跳转过来时要定位的书签 id：锚定后滚动到原文并高亮。 */
+  focusAnnotationId?: string;
 }
 
-export function Annotations({ containerRef, planId, moduleId, anchorKey }: AnnotationsProps) {
+export function Annotations({ containerRef, planId, moduleId, anchorKey, focusAnnotationId }: AnnotationsProps) {
   const { data: annotations = [], isLoading } = useAnnotations(planId, moduleId);
   const createMutation = useCreateAnnotation(planId, moduleId);
   const updateMutation = useUpdateAnnotation(planId, moduleId);
@@ -205,6 +207,8 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey }: Annot
   >([]);
   const [colX, setColX] = useState(0); // 侧列左缘相对容器的 x（虚线终点）
   const cardRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  // 从书签列表跳转定位的书签 id（高亮加强）
+  const [focusedId, setFocusedId] = useState<string | null>(null);
 
   const rangesRef = useRef<Map<string, Range>>(new Map());
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
@@ -428,7 +432,7 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey }: Annot
       { ...editor.anchor, note: draft.trim() },
       {
         onSuccess: () => {
-          toast("批注已添加", "success");
+          toast("书签已添加", "success");
           setDraft("");
           closeAll();
           window.getSelection()?.removeAllRanges();
@@ -444,7 +448,7 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey }: Annot
       { annotationId: editor.annotation.id, note: draft },
       {
         onSuccess: () => {
-          toast("批注已保存", "success");
+          toast("书签已保存", "success");
           closeAll();
         },
         onError: (e) => toast(`保存失败：${(e as Error).message}`, "error"),
@@ -453,27 +457,36 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey }: Annot
   };
 
   const handleDelete = (id: string) => {
-    if (!window.confirm("确定删除这条批注？")) return;
+    if (!window.confirm("确定删除这条书签？")) return;
     deleteMutation.mutate(id, {
       onSuccess: () => {
-        toast("批注已删除", "success");
+        toast("书签已删除", "success");
+        if (focusedId === id) setFocusedId(null);
         closeAll();
       },
       onError: (e) => toast(`删除失败：${(e as Error).message}`, "error"),
     });
   };
 
-  // 编辑中的批注高亮加强
+  // 编辑中 / 从书签列表跳转定位的书签：高亮加强
   useEffect(() => {
     const registry = highlightRegistry();
     if (!registry) return;
     registry.delete(HL_ACTIVE_NAME);
-    if (editor?.kind === "edit") {
-      const range = rangesRef.current.get(editor.annotation.id);
+    const activeId = editor?.kind === "edit" ? editor.annotation.id : focusedId;
+    if (activeId) {
+      const range = rangesRef.current.get(activeId);
       const HL = highlightCtor();
       if (range && HL) registry.set(HL_ACTIVE_NAME, new HL(range));
     }
-  }, [editor, anchorVersion]);
+  }, [editor, focusedId, anchorVersion]);
+
+  // 从书签列表跳转：锚定完成后滚动到原文并高亮（尚未锚定时等 anchorVersion 变化重试）
+  useEffect(() => {
+    if (!focusAnnotationId || !rangesRef.current.has(focusAnnotationId)) return;
+    scrollAnnoIntoView(focusAnnotationId);
+    setFocusedId(focusAnnotationId);
+  }, [focusAnnotationId, anchorVersion, scrollAnnoIntoView]);
 
   const cardPosition = (rect: DOMRect | null): React.CSSProperties => {
     if (!rect) return { top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 288 };
@@ -575,7 +588,7 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey }: Annot
             className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
           >
             <StickyNote className="h-3.5 w-3.5" />
-            批注（{annotations.length}）
+            书签（{annotations.length}）
           </button>
           {listOpen && (
             <div className="mt-2 space-y-3">
@@ -597,7 +610,7 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey }: Annot
           className="fixed z-40 inline-flex -translate-x-1/2 -translate-y-full items-center gap-1 rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-medium text-white shadow-lg hover:bg-gray-700"
           style={{ left: bubble.x, top: bubble.y }}
         >
-          <MessageSquarePlus className="h-3.5 w-3.5" /> 添加批注
+          <MessageSquarePlus className="h-3.5 w-3.5" /> 添加书签
         </button>
       )}
 

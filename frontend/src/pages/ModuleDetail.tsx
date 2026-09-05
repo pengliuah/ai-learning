@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Loader2, FileText, ListChecks, Sparkles,
@@ -19,10 +19,13 @@ import type { Module, Document } from "../api/types";
 export function ModuleDetail() {
   const { planId, moduleId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { data: doc } = usePlan(planId);
 
   const module = doc?.plan.modules.find((m) => m.id === moduleId);
+  // 从书签列表跳转过来时要定位的书签 id
+  const focusBookmarkId = searchParams.get("bookmark") ?? undefined;
 
   const [tab, setTab] = useState<"content" | "quiz">("content");
   const [redoing, setRedoing] = useState(false);
@@ -324,6 +327,7 @@ export function ModuleDetail() {
                     planId={planId!}
                     moduleId={moduleId!}
                     anchorKey={module.content!.markdown}
+                    focusAnnotationId={focusBookmarkId}
                   />
                 </div>
               )}

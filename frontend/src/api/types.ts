@@ -209,3 +209,15 @@ export interface Annotation {
   createdAt: string;
   updatedAt: string;
 }
+
+// 书签列表项（跨计划/模块聚合，GET /api/annotations）
+export interface BookmarkItem {
+  id: string;
+  planId: string;
+  planTitle: string;
+  moduleId: string;
+  moduleTitle: string | null;
+  quote: string;
+  note: string;
+  createdAt: string;
+}

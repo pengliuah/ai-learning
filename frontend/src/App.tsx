@@ -14,6 +14,7 @@ import { ModelSettings } from "./pages/ModelSettings";
 import { AccountSettings } from "./pages/AccountSettings";
 import { SettingsIndex } from "./pages/SettingsIndex";
 import { DisplaySettings } from "./pages/DisplaySettings";
+import { Bookmarks } from "./pages/Bookmarks";
 import { Login } from "./pages/Login";
 import { AdminUsers } from "./pages/AdminUsers";
 import type { ReactNode } from "react";
@@ -105,11 +106,21 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/settings/display"
+        path="/bookmarks"
         element={
           <RequireAuth>
             <Layout>
-              <DisplaySettings />
+              <Bookmarks />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/settings/password"
+        element={
+          <RequireAuth>
+            <Layout>
+              <AccountSettings />
             </Layout>
           </RequireAuth>
         }

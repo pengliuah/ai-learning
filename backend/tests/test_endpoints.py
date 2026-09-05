@@ -367,6 +367,29 @@ def test_annotation_404s(client, seeded_doc, normal_user):
     assert other.status_code == 404  # plan 不属于 normal_user
 
 
+def test_bookmark_list_aggregated_and_user_scoped(client, seeded_doc, normal_user):
+    """/api/annotations 聚合当前用户全部书签，附计划/模块标题，按用户隔离。"""
+    doc = seeded_doc
+    mid = doc.plan.modules[0].id
+    base = f"/api/plans/{doc.id}/modules/{mid}/annotations"
+    a1 = client.post(base, json={"quote": "书签一", "note": "n1"}).json()
+    a2 = client.post(base, json={"quote": "书签二", "note": "n2"}).json()
+
+    r = client.get("/api/annotations")
+    assert r.status_code == 200
+    items = r.json()
+    assert [i["id"] for i in items] == [a2["id"], a1["id"]]  # 倒序
+    assert items[0]["planId"] == doc.id
+    assert items[0]["planTitle"] == doc.plan.title
+    assert items[0]["moduleId"] == mid
+    assert items[0]["moduleTitle"] == doc.plan.modules[0].title
+    assert items[0]["quote"] == "书签二"
+
+    # 用户隔离: normal_user 看不到 admin 的书签
+    r = client.get("/api/annotations", headers=auth_headers(normal_user))
+    assert r.status_code == 200 and r.json() == []
+
+
 def test_annotation_cross_user_isolation(client, seeded_doc, normal_user):
     """A normal user cannot read or modify the admin's annotations."""
     doc = seeded_doc

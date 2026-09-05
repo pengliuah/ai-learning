@@ -593,6 +593,7 @@ function ResultsView({
           onAction={onRegrade}
           busy={regrading}
           title="按当前作答重新批改（可先在「更多」里调整批改策略）"
+          dropUp
           menuItems={[
             {
               label: "批改设置",

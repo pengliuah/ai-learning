@@ -1,13 +1,20 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, KeyRound } from "lucide-react";
+import { ArrowLeft, KeyRound, Type } from "lucide-react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import {
+  FONT_SIZE_OPTIONS,
+  getFontSizeStep,
+  setFontSizeStep,
+  type FontSizeStep,
+} from "../utils/fontSize";
 
 export function AccountSettings() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const [fontSize, setFontSize] = useState<FontSizeStep>(() => getFontSizeStep());
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -117,6 +124,34 @@ export function AccountSettings() {
             {submitting ? "提交中..." : "确认修改"}
           </button>
         </form>
+      </div>
+
+      <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+        <div className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+          <Type className="h-4 w-4" />
+          界面字号
+        </div>
+        <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+          整体调整界面与正文的文字大小，仅对当前设备生效。
+        </p>
+        <div className="inline-flex rounded-md border border-gray-200 p-0.5 dark:border-gray-700">
+          {FONT_SIZE_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => {
+                setFontSize(opt.key);
+                setFontSizeStep(opt.key);
+              }}
+              className={`rounded px-3 py-1.5 text-sm font-medium transition ${
+                fontSize === opt.key
+                  ? "bg-indigo-600 text-white dark:bg-indigo-500"
+                  : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

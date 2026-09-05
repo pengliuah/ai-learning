@@ -33,6 +33,19 @@ npm run build:apk   # release 包：未配置签名时产出 zhixue-release.apk�
   注意测试环境若是 HTTP 明文地址，需要临时把 `capacitor.config.json` 的 `cleartext` 打开再打包。
 - 网页端不受影响（走 nginx 同源 `/api`，无需此变量）。
 
+## 图标（启动器 icon）
+
+来源是网页同款图标 `frontend/public/favicon.svg`（微笑小书本）。`android/` 目录是生成物不入库，
+新机器 `npx cap add android` 后需要重新生成图标：
+
+```bash
+cd ../backend && uv pip install pillow
+cd ../mobile && ../backend/.venv/Scripts/python.exe scripts/gen-icons.py
+```
+
+脚本用 Edge 无头渲染 SVG，自动产出传统图标（ic_launcher / round，mdpi..xxxhdpi）、
+自适应图标前景（图形居中 66% 安全区）并把背景色设为品牌靛蓝。换 logo 时重跑即可。
+
 ## 签名（正式分发前必做）
 
 ```bash

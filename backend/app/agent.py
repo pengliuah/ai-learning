@@ -690,12 +690,16 @@ class LearningCoach:
                 kind = event.get("event")
                 if kind == "on_chat_model_stream":
                     chunk = event.get("data", {}).get("chunk")
-                    if getattr(chunk, "usage_metadata", None):
-                        if total_usage is None:
-                            total_usage = dict(chunk.usage_metadata)
-                        else:
-                            for k in total_usage:
-                                total_usage[k] += int(chunk.usage_metadata.get(k) or 0)
+                if getattr(chunk, "usage_metadata", None):
+                    um = chunk.usage_metadata
+                    if total_usage is None:
+                        # 只累计数值键: usage_metadata 可能带 input_token_details
+                        # 等字典值, 直接 dict() 拷贝后 int() 会 TypeError
+                        total_usage = {k: int(um.get(k) or 0)
+                                       for k in ("input_tokens", "output_tokens", "total_tokens")}
+                    else:
+                        for k in total_usage:
+                            total_usage[k] += int(um.get(k) or 0)
                     text = getattr(chunk, "content", "") if chunk else ""
                     if isinstance(text, str) and text:
                         assistant_parts.append(text)

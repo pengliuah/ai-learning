@@ -16,9 +16,8 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 
-# app data
-backend/data/*.json
-!backend/data/plans.json
+# app data (旧 JSON 存储目录, 已弃用; 防止意外提交)
+backend/data/
 # Android SDK (local)
 .android-sdk/
 

@@ -125,7 +125,7 @@ log "2/5 旧备份已清理: $BACKUP_DIR 下每类备份只保留最新一份"
 # ---- 3. 拉取最新代码 ----
 log "3/5 拉取最新代码到 $APP_DIR"
 if [ -d "$APP_DIR/.git" ]; then
-  # reset --hard 只覆盖跟踪文件; .env / nginx/ssl / backend/data 均被 gitignore, 不受影响
+  # reset --hard 只覆盖跟踪文件; .env / nginx/ssl 均被 gitignore, 不受影响
   git -C "$APP_DIR" fetch --all --prune
   git -C "$APP_DIR" reset --hard "origin/$BRANCH"
   log "已更新现有检出至 origin/$BRANCH"

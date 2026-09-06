@@ -19,8 +19,6 @@ services:
     build: .
     expose:
       - "8000"
-    volumes:
-      - ./backend/data:/app/backend/data
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-123}@postgres:5432/zhixue

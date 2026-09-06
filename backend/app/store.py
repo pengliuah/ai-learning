@@ -22,7 +22,6 @@ refresh tokens are managed here too (used by ``auth.py`` and the routes).
 from __future__ import annotations
 
 import logging
-import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Callable
@@ -30,7 +29,6 @@ from typing import Callable
 from psycopg import errors as psycopg_errors
 from psycopg.types.json import Jsonb
 
-from .config import DATA_DIR
 from .db import db_conn
 from .schemas import (
     Assessment,
@@ -534,45 +532,6 @@ def update_gen_settings(
     return {r["gen_type"]: r["strategy"] for r in rows}
 
 
-def auto_migrate_if_needed() -> None:
-    """Migrate data from plans.json to PG if the database is empty.
-
-    Runs on app startup after schema init. Only migrates when the plans
-    table is empty AND plans.json exists with data, so it is safe to run
-    on every startup without re-importing. Legacy plans land on the first
-    admin account.
-    """
-    plans_json = DATA_DIR / "plans.json"
-    if not plans_json.exists():
-        return
-    try:
-        with db_conn() as conn:
-            count = conn.execute("SELECT COUNT(*) AS c FROM plans").fetchone()["c"]
-    except Exception:
-        logger.debug("auto_migrate: DB not available, skipping")
-        return
-    if count > 0:
-        return
-    owner = first_admin_id()
-    if owner is None:
-        logger.warning("auto_migrate: no admin account, cannot assign legacy plans")
-        return
-    raw = json.loads(plans_json.read_text(encoding="utf-8"))
-    if not raw:
-        return
-    logger.info("auto_migrate: %d document(s) in plans.json, database empty - migrating", len(raw))
-    migrated = 0
-    for plan_id, doc_dict in raw.items():
-        try:
-            doc = Document.model_validate(doc_dict)
-            save_document(doc, owner)
-            logger.info("auto_migrate: migrated %s (%s)", plan_id, doc.plan.title)
-            migrated += 1
-        except Exception as exc:
-            logger.error("auto_migrate: failed to import %s: %s", plan_id, exc)
-    logger.info("auto_migrate: done, %d/%d document(s) migrated", migrated, len(raw))
-
-
 # ---------------------------------------------------------------------------
 # Model settings (per-user: LLM API key / model / base URL)
 #
@@ -863,16 +822,6 @@ def update_user_password(user_id: str, password_hash: str) -> None:
             (password_hash, user_id),
         )
     logger.info("update_user_password: user=%s", user_id)
-
-
-def first_admin_id() -> str | None:
-    """Id of the oldest admin account (legacy data owner), or None."""
-    with db_conn() as conn:
-        row = conn.execute(
-            """SELECT id FROM users WHERE role = 'admin'
-               ORDER BY created_at LIMIT 1"""
-        ).fetchone()
-    return str(row["id"]) if row else None
 
 
 # ---------------------------------------------------------------------------

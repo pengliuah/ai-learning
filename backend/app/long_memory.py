@@ -85,6 +85,54 @@ def _make_usage_callback(user_id: str):
     return _callback
 
 
+def _metered_embedder_class(user_id: str):
+    """带 token 计量的 OpenAI embedder 子类（mem0 的 embedder 无回调钩子）。
+
+    行为与 mem0 的 OpenAIEmbedding 一致（含 dimensions 传参逻辑），
+    差异仅在把每次调用的 usage 记到 token_usage(kind='embedding')。
+    """
+    from mem0.embeddings.openai import OpenAIEmbedding
+
+    class _MeteredOpenAIEmbedding(OpenAIEmbedding):
+        def _record(self, response) -> None:
+            usage = getattr(response, "usage", None)
+            if not usage:
+                return
+            try:
+                store.record_token_usage(
+                    user_id,
+                    "memory",
+                    input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+                    output_tokens=0,
+                    total_tokens=getattr(usage, "total_tokens", 0) or 0,
+                    kind="embedding",
+                )
+            except Exception as exc:
+                logger.warning("long_memory: 记录 embedding 用量失败: %s", exc)
+
+        def _kwargs(self, texts: list[str]) -> dict:
+            kwargs = {"input": texts, "model": self.config.model, "encoding_format": "float"}
+            if self._pass_dimensions_to_api:
+                kwargs["dimensions"] = self.config.embedding_dims
+            return kwargs
+
+        def embed(self, text, memory_action=None):
+            resp = self.client.embeddings.create(**self._kwargs([text.replace("\n", " ")]))
+            self._record(resp)
+            return resp.data[0].embedding
+
+        def embed_batch(self, texts, memory_action="add"):
+            texts = [t.replace("\n", " ") for t in texts]
+            out: list = []
+            for i in range(0, len(texts), 100):  # 与上游一致的 100 条分批
+                resp = self.client.embeddings.create(**self._kwargs(texts[i : i + 100]))
+                self._record(resp)
+                out.extend(item.embedding for item in sorted(resp.data, key=lambda x: x.index))
+            return out
+
+    return _MeteredOpenAIEmbedding
+
+
 def _build_instance(user_id: str):
     """按该用户的当前配置构建一个 mem0 ``Memory``（含一次 dims 探测调用）。
 
@@ -139,6 +187,17 @@ def _build_instance(user_id: str):
         custom_instructions=CUSTOM_INSTRUCTIONS,
     )
     mem = Memory(config)
+    # 换装带计量的 embedder (维度/请求行为与默认实例一致, 差异仅是记用量)
+    from mem0.configs.embeddings.base import BaseEmbedderConfig
+
+    mem.embedding_model = _metered_embedder_class(user_id)(
+        BaseEmbedderConfig(
+            model=emb_model,
+            api_key=emb_key,
+            openai_base_url=emb_base_url or None,
+            embedding_dims=dims,
+        )
+    )
     logger.info("long_memory: instance built (user=%s, dims=%d, collection=%s)",
                 user_id, dims, collection_name_for_dims(dims))
     return mem

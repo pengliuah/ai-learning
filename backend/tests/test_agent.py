@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from app import agent as agent_mod
+from app import store
 from app.agent import LearningCoach, _split_key_takeaways
 from app.schemas import (
     Assessment,
@@ -235,3 +236,64 @@ def test_system_prompts_require_latex_math():
         # LaTeX backslashes must stay literal (not escape-processed into CR/tab)
         assert r"\rho" in prompt, "prompt must include \\rho with a literal backslash"
         assert r"\text" in prompt, "prompt must include \\text with a literal backslash"
+
+
+# ---------------------------------------------------------------------------
+# coach_stream: 事件循环回归 (工具事件与用量块混合时不崩, 用量只累计数值键)
+# ---------------------------------------------------------------------------
+
+
+class _FakeChunk:
+    def __init__(self, content="", usage=None):
+        self.content = content
+        self.usage_metadata = usage
+
+
+class _FakeStreamAgent:
+    """按给定事件序列回放 astream_events。"""
+
+    def __init__(self, events):
+        self._events = events
+
+    async def astream_events(self, inp, version):
+        for e in self._events:
+            yield e
+
+
+def _usage(tokens_in, tokens_out):
+    # 新版 langchain-openai 会附字典形式的 input_token_details
+    return {
+        "input_tokens": tokens_in,
+        "output_tokens": tokens_out,
+        "total_tokens": tokens_in + tokens_out,
+        "input_token_details": {"reasoning": 1},
+    }
+
+
+def test_coach_stream_tool_events_and_usage_accumulation(tmp_store, admin_user, monkeypatch):
+    """on_tool_start 等事件不能让 chunk 未绑定就崩; 用量跨多轮只加数值键。"""
+    user_id = str(admin_user["id"])
+    events = [
+        {"event": "on_chat_model_stream",
+         "data": {"chunk": _FakeChunk("你好", _usage(10, 2))}},
+        {"event": "on_tool_start", "name": "search_plans", "data": {}},
+        {"event": "on_tool_end", "name": "search_plans", "data": {"output": "[]"}},
+        {"event": "on_chat_model_stream",
+         "data": {"chunk": _FakeChunk("！相信我", _usage(5, 3))}},
+    ]
+    c = LearningCoach()
+    monkeypatch.setattr(c, "_build_chat_agent", lambda uid: _FakeStreamAgent(events))
+
+    async def run():
+        out = []
+        async for kind, payload in c.coach_stream("打个招呼", history=[], user_id=user_id):
+            out.append((kind, payload))
+        return out
+
+    out = asyncio.run(run())
+    deltas = [p["text"] for k, p in out if k == "delta"]
+    assert deltas == ["你好", "！相信我"]
+    assert ("tool", {"phase": "start", "name": "search_plans"}) in out
+
+    s = store.get_usage_summary(user_id)["today"]["llm"]
+    assert s["inputTokens"] == 15 and s["outputTokens"] == 5 and s["totalTokens"] == 20

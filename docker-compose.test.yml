@@ -35,7 +35,9 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:16-alpine
+    # pgvector 镜像 = 官方 postgres 预装 pgvector 扩展 (AI 长期记忆/Mem0 用);
+    # 数据仍在 ./pgdata, 与 postgres:16-alpine 二进制兼容, 换镜像重建即可
+    image: pgvector/pgvector:pg16
     # 测试环境: 对外暴露 5432, 供本地开发/调试直连测试库
     # (线上环境 docker-compose.prod.yml 不暴露, 数据库只在 docker 内网)
     ports:

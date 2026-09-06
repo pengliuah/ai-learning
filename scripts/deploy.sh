@@ -65,7 +65,9 @@ done
 docker compose version >/dev/null 2>&1 || { err "未找到 'docker compose' (需 Docker Compose v2)"; exit 1; }
 
 # ---- 0. 部署前数据库备份 (任何持久化变更/翻车都可回) ----
-running_pg=$(docker ps -q --filter "ancestor=postgres:16-alpine" | head -1)
+# 按容器名匹配 (项目名-postgres-1), 不按镜像过滤: postgres 镜像已换成
+# pgvector/pgvector:pg16, 按 ancestor=postgres:16-alpine 匹配会漏掉新镜像
+running_pg=$(docker ps -q --filter "name=postgres" | head -1)
 if [ -n "$running_pg" ]; then
   mkdir -p "$BACKUP_DIR"
   if docker exec "$running_pg" pg_dumpall -U postgres 2>/dev/null | gzip > "$BACKUP_DIR/zhixue-db-$ts.sql.gz"; then
@@ -177,6 +179,14 @@ log "5/5 构建镜像并启动服务 ($ENV)"
 cd "$APP_DIR"
 docker compose -f "$COMPOSE_FILE" build
 docker compose -f "$COMPOSE_FILE" up -d
+
+# pgvector 扩展 (幂等): AI 记忆/向量检索依赖; pgvector 镜像自带, 官方镜像没有会 warn
+if docker compose -f "$COMPOSE_FILE" exec -T postgres psql -U postgres -d zhixue \
+    -c 'CREATE EXTENSION IF NOT EXISTS vector;' >/dev/null 2>&1; then
+  log "pgvector 扩展就绪"
+else
+  warn "CREATE EXTENSION vector 失败 (postgres 镜像可能不含 pgvector, 记忆功能不可用)"
+fi
 
 # 健康检查: /api/health 需登录, 401 即代表 nginx→后端→DB 链路活着且鉴权生效。
 # prod 必须走 https (80 端口对所有路径 301 跳 443, 打 http 永远拿不到后端应答);

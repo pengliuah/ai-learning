@@ -137,7 +137,7 @@ def test_settings_are_per_user(tmp_store, admin_user, normal_user):
 
 
 def test_token_usage_record_and_summary(tmp_store, admin_user, normal_user):
-    """Usage rows are per-user and aggregate into today/month/allTime."""
+    """Usage rows are per-user, split by model kind, aggregate into today/month/allTime."""
     admin_id = str(admin_user["id"])
     user_id = str(normal_user["id"])
 
@@ -146,19 +146,26 @@ def test_token_usage_record_and_summary(tmp_store, admin_user, normal_user):
     store.record_token_usage(user_id, "coach", 10, 5, 15, model="m2")
 
     s = store.get_usage_summary(admin_id)
-    assert s["today"]["requests"] == 2
-    assert s["today"]["inputTokens"] == 300
-    assert s["today"]["outputTokens"] == 320
-    assert s["today"]["totalTokens"] == 620
-    assert s["month"] == s["today"]  # fresh DB: nothing older than today
-    assert s["allTime"]["totalTokens"] == 620
+    assert s["today"]["llm"]["requests"] == 2
+    assert s["today"]["llm"]["inputTokens"] == 300
+    assert s["today"]["llm"]["outputTokens"] == 320
+    assert s["today"]["llm"]["totalTokens"] == 620
+    assert s["today"]["embedding"]["requests"] == 0  # 没记过 embedding 用量
+    assert s["month"]["llm"] == s["today"]["llm"]  # fresh DB: nothing older than today
+    assert s["allTime"]["llm"]["totalTokens"] == 620
 
     u = store.get_usage_summary(user_id)
-    assert u["today"]["totalTokens"] == 15
+    assert u["today"]["llm"]["totalTokens"] == 15
 
     # model 默认取用户配置 (未配置时为空串), 不抛异常
     store.record_token_usage(user_id, "quiz", 1, 2, 3)
-    assert store.get_usage_summary(user_id)["today"]["requests"] == 2
+    assert store.get_usage_summary(user_id)["today"]["llm"]["requests"] == 2
+
+    # embedding 用量与大模型分开统计 (model 默认取向量模型配置)
+    store.record_token_usage(user_id, "memory", 7, 0, 7, kind="embedding")
+    e = store.get_usage_summary(user_id)["today"]
+    assert e["embedding"]["requests"] == 1 and e["embedding"]["totalTokens"] == 7
+    assert e["llm"]["requests"] == 2 and e["llm"]["totalTokens"] == 18
 
 
 def test_annotations_crud_and_isolation(tmp_store, admin_user, normal_user):

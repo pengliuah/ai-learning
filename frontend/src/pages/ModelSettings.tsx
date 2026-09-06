@@ -3,43 +3,58 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Eye, EyeOff, Save, Loader2, Settings2 } from "lucide-react";
 import { useModelSettings, useUpdateModelSettings, useUsageSummary } from "../hooks/useSettings";
 import { useToast } from "../components/Toast";
-import type { UsageStat } from "../api/types";
+import type { UsageByKind } from "../api/types";
 
 function formatTokens(n: number): string {
   return n.toLocaleString("zh-CN");
 }
 
-/** 今日 / 本月 / 累计 token 用量卡片（来自后端 token_usage 统计表）。 */
+/** 今日 / 本月 / 累计 token 用量（来自后端 token_usage 统计表），
+ * 按模型类型拆分：大模型（AI 生成/抽取）与嵌入模型（记忆向量化）。 */
 function UsageCard() {
   const { data } = useUsageSummary();
   if (!data) return null;
 
-  const cells: [string, UsageStat][] = [
+  const buckets: [string, UsageByKind][] = [
     ["今日", data.today],
     ["本月", data.month],
     ["累计", data.allTime],
+  ];
+  const kinds: [keyof UsageByKind, string][] = [
+    ["llm", "大模型"],
+    ["embedding", "嵌入模型"],
   ];
 
   return (
     <section className="mb-6 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
       <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Token 用量</h2>
       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-        本账号调用模型的 token 消耗统计（统计自本系统，余额请到对应模型服务商控制台查看）。
+        本账号调用模型的 token 消耗统计，按模型类型分别统计（统计自本系统，余额请到对应模型服务商控制台查看）。
       </p>
-      <div className="mt-3 grid grid-cols-3 gap-3">
-        {cells.map(([label, stat]) => (
-          <div
-            key={label}
-            className="rounded-md border border-gray-100 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900"
-          >
-            <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
-            <p className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">
-              {formatTokens(stat.totalTokens)}
-            </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">
-              输入 {formatTokens(stat.inputTokens)} / 输出 {formatTokens(stat.outputTokens)}
-            </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">{stat.requests} 次调用</p>
+      <div className="mt-3 space-y-3">
+        {kinds.map(([kindKey, kindLabel]) => (
+          <div key={kindKey}>
+            <p className="mb-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">{kindLabel}</p>
+            <div className="grid grid-cols-3 gap-3">
+              {buckets.map(([label, byKind]) => {
+                const stat = byKind[kindKey];
+                return (
+                  <div
+                    key={label}
+                    className="rounded-md border border-gray-100 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900"
+                  >
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
+                    <p className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                      {formatTokens(stat.totalTokens)}
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
+                      输入 {formatTokens(stat.inputTokens)} / 输出 {formatTokens(stat.outputTokens)}
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">{stat.requests} 次调用</p>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ))}
       </div>

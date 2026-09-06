@@ -714,19 +714,28 @@ def record_token_usage(
     output_tokens: int = 0,
     total_tokens: int = 0,
     model: str | None = None,
+    kind: str = "llm",
 ) -> None:
-    """Insert one usage row. ``model`` defaults to the user's configured model."""
+    """Insert one usage row.
+
+    ``kind`` distinguishes the billed model type: ``"llm"`` (大模型, 默认)
+    or ``"embedding"`` (向量模型). ``model`` defaults to the user's configured
+    LLM or embedding model respectively.
+    """
     if model is None:
         try:
-            model = get_llm_config(user_id)[1] or ""
+            if kind == "embedding":
+                model = get_embedding_config(user_id)[1] or ""
+            else:
+                model = get_llm_config(user_id)[1] or ""
         except Exception:
             model = ""
     with db_conn() as conn:
         conn.execute(
             """INSERT INTO token_usage
-                   (user_id, gen_type, model, input_tokens, output_tokens, total_tokens)
-               VALUES (%s, %s, %s, %s, %s, %s)""",
-            (user_id, gen_type, model, input_tokens, output_tokens, total_tokens),
+                   (user_id, gen_type, model, input_tokens, output_tokens, total_tokens, kind)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (user_id, gen_type, model, input_tokens, output_tokens, total_tokens, kind),
         )
 
 
@@ -738,22 +747,31 @@ def get_usage_summary(user_id: str) -> dict:
     epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
     def _sum(since: datetime) -> dict:
+        """One time bucket, split by model kind (llm / embedding)."""
         with db_conn() as conn:
-            row = conn.execute(
-                """SELECT COUNT(*) AS requests,
+            rows = conn.execute(
+                """SELECT kind,
+                          COUNT(*) AS requests,
                           COALESCE(SUM(input_tokens), 0) AS input_tokens,
                           COALESCE(SUM(output_tokens), 0) AS output_tokens,
                           COALESCE(SUM(total_tokens), 0) AS total_tokens
                    FROM token_usage
-                   WHERE user_id = %s AND created_at >= %s""",
+                   WHERE user_id = %s AND created_at >= %s
+                   GROUP BY kind""",
                 (user_id, since),
-            ).fetchone()
-        return {
-            "requests": int(row["requests"]),
-            "inputTokens": int(row["input_tokens"]),
-            "outputTokens": int(row["output_tokens"]),
-            "totalTokens": int(row["total_tokens"]),
-        }
+            ).fetchall()
+        by_kind = {r["kind"]: r for r in rows}
+
+        def _stat(kind: str) -> dict:
+            row = by_kind.get(kind)
+            return {
+                "requests": int(row["requests"]) if row else 0,
+                "inputTokens": int(row["input_tokens"]) if row else 0,
+                "outputTokens": int(row["output_tokens"]) if row else 0,
+                "totalTokens": int(row["total_tokens"]) if row else 0,
+            }
+
+        return {"llm": _stat("llm"), "embedding": _stat("embedding")}
 
     return {
         "today": _sum(today_start),

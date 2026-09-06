@@ -151,9 +151,15 @@ export interface UsageStat {
 }
 
 export interface UsageSummary {
-  today: UsageStat;
-  month: UsageStat;
-  allTime: UsageStat;
+  today: UsageByKind;
+  month: UsageByKind;
+  allTime: UsageByKind;
+}
+
+/** 按模型类型拆分的用量：llm=大模型，embedding=向量模型 */
+export interface UsageByKind {
+  llm: UsageStat;
+  embedding: UsageStat;
 }
 
 export type SaveToImaContentType = "plan" | "content" | "quiz" | "result";

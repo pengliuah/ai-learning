@@ -264,10 +264,12 @@ CREATE TRIGGER user_model_settings_set_updated_at
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ---------------------------------------------------------------------------
--- token_usage  -  per-user LLM token 用量统计
+-- token_usage  -  per-user token 用量统计 (大模型 + 嵌入模型)
 --
--- 每次 LLM 调用成功后写入一行 (按用户), 用于「模型设置」页展示
--- 今日 / 本月 / 累计的 token 消耗与请求次数。不涉及计费, 仅作统计。
+-- 每次 LLM/embedding 调用成功后写入一行 (按用户), 用于「模型设置」页展示
+-- 今日 / 本月 / 累计的 token 消耗与请求次数。kind 区分模型类型:
+-- 'llm' (大模型, AI 生成/抽取) 与 'embedding' (向量模型, 记忆检索向量化)。
+-- 不涉及计费, 仅作统计。
 -- ---------------------------------------------------------------------------
 CREATE TABLE token_usage (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -277,6 +279,7 @@ CREATE TABLE token_usage (
     input_tokens  INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0,
     total_tokens  INTEGER NOT NULL DEFAULT 0,
+    kind          TEXT NOT NULL DEFAULT 'llm',
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_token_usage_user_created ON token_usage (user_id, created_at);

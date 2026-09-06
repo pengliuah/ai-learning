@@ -155,6 +155,7 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
                    input_tokens  INTEGER NOT NULL DEFAULT 0,
                    output_tokens INTEGER NOT NULL DEFAULT 0,
                    total_tokens  INTEGER NOT NULL DEFAULT 0,
+                   kind          TEXT NOT NULL DEFAULT 'llm',
                    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
                )"""
         )
@@ -162,6 +163,11 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
             "CREATE INDEX idx_token_usage_user_created ON token_usage (user_id, created_at)"
         )
         logger.info("init_schema: token_usage table added")
+
+    # 大模型/嵌入模型分别统计 (幂等): kind = 'llm' | 'embedding', 旧行回填 llm
+    conn.execute(
+        "ALTER TABLE token_usage ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'llm'"
+    )
 
     if not conn.execute("SELECT to_regclass('public.annotations')").fetchone()[0]:
         conn.execute(

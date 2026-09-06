@@ -195,7 +195,9 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey, focusAn
   const deleteMutation = useDeleteAnnotation(planId, moduleId);
   const { toast } = useToast();
 
-  const [bubble, setBubble] = useState<{ x: number; y: number; anchor: Anchor } | null>(null);
+  const [bubble, setBubble] = useState<
+    { x: number; y: number; placement: "above" | "below"; anchor: Anchor } | null
+  >(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [draft, setDraft] = useState("");
   const [listOpen, setListOpen] = useState(false);
@@ -319,38 +321,57 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey, focusAn
   }, [reanchor, anchorKey]);
 
   // --- 选区浮条 ------------------------------------------------------------
+  // 桌面：mouseup 即选区完成。移动端/App（WebView）：长按起选区时触屏序列以
+  // touchcancel 结束、拖动选择手柄根本没有 touchend，selectionchange 是唯一
+  // 可靠信号，防抖等选区稳定后再显示浮条。
   useEffect(() => {
-    const onSelectionEnd = () => {
-      setTimeout(() => {
-        const container = containerRef.current;
-        const sel = window.getSelection();
-        if (!container || !sel || sel.isCollapsed || sel.rangeCount === 0) {
-          setBubble(null);
-          return;
-        }
-        const range = sel.getRangeAt(0);
-        if (!container.contains(range.commonAncestorContainer)) {
-          setBubble(null);
-          return;
-        }
-        const anchor = extractAnchor(container, range);
-        if (!anchor) {
-          setBubble(null);
-          return;
-        }
-        const rect = range.getBoundingClientRect();
-        setBubble({
-          x: Math.min(Math.max(rect.left + rect.width / 2, 60), window.innerWidth - 60),
-          y: Math.max(rect.top - 8, 60),
-          anchor,
-        });
-      }, 0);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const showBubble = () => {
+      const container = containerRef.current;
+      const sel = window.getSelection();
+      if (!container || !sel || sel.isCollapsed || sel.rangeCount === 0) {
+        setBubble(null);
+        return;
+      }
+      const range = sel.getRangeAt(0);
+      if (!container.contains(range.commonAncestorContainer)) {
+        setBubble(null);
+        return;
+      }
+      const anchor = extractAnchor(container, range);
+      if (!anchor) {
+        setBubble(null);
+        return;
+      }
+      const rect = range.getBoundingClientRect();
+      const x = Math.min(Math.max(rect.left + rect.width / 2, 60), window.innerWidth - 60);
+      // 系统选择工具条悬浮在选区上方，触屏设备把浮条放到选区下方错开
+      const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+      if (coarse && rect.bottom + 60 <= window.innerHeight) {
+        setBubble({ x, y: rect.bottom + 8, placement: "below", anchor });
+      } else {
+        setBubble({ x, y: Math.max(rect.top - 8, 60), placement: "above", anchor });
+      }
     };
+
+    const onSelectionEnd = () => {
+      if (timer) clearTimeout(timer);
+      showBubble();
+    };
+    const onSelectionChange = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(showBubble, 300);
+    };
+
     document.addEventListener("mouseup", onSelectionEnd);
     document.addEventListener("touchend", onSelectionEnd);
+    document.addEventListener("selectionchange", onSelectionChange);
     return () => {
+      if (timer) clearTimeout(timer);
       document.removeEventListener("mouseup", onSelectionEnd);
       document.removeEventListener("touchend", onSelectionEnd);
+      document.removeEventListener("selectionchange", onSelectionChange);
     };
   }, [containerRef]);
 
@@ -423,6 +444,13 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey, focusAn
     setDraft(anno.note);
     setEditor({ kind: "edit", annotation: anno, rect });
     if (rect) scrollAnnoIntoView(anno.id);
+  };
+
+  const openNewEditor = () => {
+    if (!bubble) return;
+    setDraft("");
+    setEditor({ kind: "new", anchor: bubble.anchor, rect: new DOMRect(bubble.x - 40, bubble.y, 80, 20) });
+    setBubble(null);
   };
 
   const handleCreate = () => {
@@ -602,12 +630,15 @@ export function Annotations({ containerRef, planId, moduleId, anchorKey, focusAn
       {bubble && !editor && (
         <button
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            setDraft("");
-            setEditor({ kind: "new", anchor: bubble.anchor, rect: new DOMRect(bubble.x - 40, bubble.y, 80, 20) });
-            setBubble(null);
+          onClick={openNewEditor}
+          onTouchEnd={(e) => {
+            // 触屏点按浮条会先清空选区并吞掉 click，preventDefault 后直接打开
+            e.preventDefault();
+            openNewEditor();
           }}
-          className="fixed z-40 inline-flex -translate-x-1/2 -translate-y-full items-center gap-1 rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-medium text-white shadow-lg hover:bg-gray-700"
+          className={`fixed z-40 inline-flex -translate-x-1/2 items-center gap-1 rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-medium text-white shadow-lg hover:bg-gray-700 ${
+            bubble.placement === "above" ? "-translate-y-full" : ""
+          }`}
           style={{ left: bubble.x, top: bubble.y }}
         >
           <MessageSquarePlus className="h-3.5 w-3.5" /> 添加书签

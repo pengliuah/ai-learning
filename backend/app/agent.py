@@ -30,7 +30,7 @@ from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 
-from . import ima, memory, store
+from . import ima, long_memory, memory, store
 from .config import BACKEND_DIR
 from .llm import build_chat_model, build_streaming_model
 from .schemas import (
@@ -257,6 +257,8 @@ class LearningCoach:
         """Drop all cached agents so the next call rebuilds with new settings."""
         self._graphs = {}
         self._chat_agents = {}
+        # 长期记忆实例同样绑定用户的模型配置, 一并按新配置重建
+        long_memory.clear_cache()
 
     def _make_subagent(self, response_format, system_prompt, user_id: str):
         return create_deep_agent(
@@ -657,6 +659,10 @@ class LearningCoach:
                 summary = None
 
         messages = memory.build_messages_from(kept, dropped, summary)
+        # 长期记忆: 用本轮 goal 检索该用户的跨会话事实, 注入最前 (失败返回空串)
+        recalled = await long_memory.recall(user_id, goal)
+        if recalled:
+            messages.insert(0, SystemMessage(content=f"[该学员的长期记忆，供参考]\n{recalled}"))
         messages.append(HumanMessage(content=goal))
         _log_llm_messages("coach", messages)
         return messages
@@ -671,6 +677,7 @@ class LearningCoach:
         # 一次对话可能触发多轮模型调用 (工具循环), 把每轮 usage chunk 累加,
         # 无论流是否正常结束都在 finally 里落库。
         total_usage: dict | None = None
+        assistant_parts: list[str] = []
         try:
             async for event in agent.astream_events(
                 {"messages": messages}, version="v2"
@@ -686,6 +693,7 @@ class LearningCoach:
                                 total_usage[k] += int(chunk.usage_metadata.get(k) or 0)
                     text = getattr(chunk, "content", "") if chunk else ""
                     if isinstance(text, str) and text:
+                        assistant_parts.append(text)
                         yield ("delta", {"text": text})
                 elif kind == "on_tool_start":
                     yield ("tool", {"phase": "start", "name": event.get("name")})
@@ -696,6 +704,8 @@ class LearningCoach:
                     yield ("tool", {"phase": "end", "name": event.get("name"), "output": str(output)})
         finally:
             _record_usage(user_id, "coach", total_usage)
+            # 长期记忆写入: 后台任务, 不阻塞响应收尾 (内部吞掉一切异常)
+            long_memory.remember_background(user_id, goal, "".join(assistant_parts))
 
 
 def _split_key_takeaways(text: str) -> tuple[str, list[str]]:

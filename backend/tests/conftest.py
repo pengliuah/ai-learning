@@ -1,17 +1,35 @@
 """Pytest fixtures: PG-backed store, fake coach, FastAPI TestClient.
 
-Store-dependent tests use a real PostgreSQL database (the DATABASE_URL from
-settings / .env).  Each test gets a clean database via TRUNCATE CASCADE.
-If PG is unreachable, store-dependent tests are skipped automatically.
+Store-dependent tests use a real PostgreSQL database. For safety the
+database name from DATABASE_URL is rewritten to ``zhixue_test`` (see the
+guard at the top of this file) -- tests TRUNCATE everything, so they must
+never touch the live database. If PG is unreachable, store-dependent tests
+are skipped automatically.
 
 Account system: every test starts with a fresh admin (``admin_user``) and an
-optional normal user (``normal_user``).  The ``client`` fixture carries the
+optional normal user (``normal_user``). The ``client`` fixture carries the
 admin's access token as a default Authorization header, so existing
 single-user endpoint tests keep working unchanged.
 """
 from __future__ import annotations
 
 from typing import AsyncIterator
+
+import os
+
+# --- 数据库安全护栏 (必须先于任何 app 导入执行) -------------------------------
+# .env 的 DATABASE_URL 指向测试环境服务器的真实库 (如 192.168.1.184:5432/zhixue),
+# 而 tmp_store 夹具会 TRUNCATE 全库 —— 直接用会把线上数据清掉 (2026-09-06 事故:
+# 跑一次测试, 账号/模型配置/书签/用量全部丢失)。这里强制把库名改写为
+# zhixue_test, 测试永远打不进真实库。逃生阀: ZHIXUE_ALLOW_LIVE_DB_TESTS=1。
+from dotenv import load_dotenv
+
+load_dotenv()  # 先把 .env 读进来 (config.py 的 load_dotenv 不会覆盖已有变量)
+_db_url = os.environ.get("DATABASE_URL", "")
+if _db_url and os.environ.get("ZHIXUE_ALLOW_LIVE_DB_TESTS") != "1":
+    _head, _, _dbname = _db_url.rstrip("/").rpartition("/")
+    if _dbname != "zhixue_test":
+        os.environ["DATABASE_URL"] = f"{_head}/zhixue_test"
 
 import pytest
 from fastapi.testclient import TestClient

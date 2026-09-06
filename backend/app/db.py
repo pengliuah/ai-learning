@@ -229,12 +229,15 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
                PRIMARY KEY (user_id, gen_type)
            )""", "user_gen_settings"),
         ("user_model_settings", """CREATE TABLE user_model_settings (
-               user_id     UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-               api_key     TEXT NOT NULL DEFAULT '',
-               model       TEXT NOT NULL DEFAULT '',
-               base_url    TEXT NOT NULL DEFAULT '',
-               max_tokens  INTEGER NOT NULL DEFAULT 8192,
-               updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+               user_id             UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+               api_key             TEXT NOT NULL DEFAULT '',
+               model               TEXT NOT NULL DEFAULT '',
+               base_url            TEXT NOT NULL DEFAULT '',
+               max_tokens          INTEGER NOT NULL DEFAULT 8192,
+               embedding_api_key   TEXT NOT NULL DEFAULT '',
+               embedding_model     TEXT NOT NULL DEFAULT '',
+               embedding_base_url  TEXT NOT NULL DEFAULT '',
+               updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
            )""", "user_model_settings"),
     ):
         if not conn.execute(f"SELECT to_regclass('public.{table}')").fetchone()[0]:
@@ -462,6 +465,15 @@ def init_schema() -> None:
             # Runs AFTER the legacy steps above: it moves (and drops) the old
             # global settings tables once they may have been recreated.
             _migrate_auth_tables(conn)
+
+            # 向量模型配置 (embedding): 老库补列 (幂等)。
+            # 模型名必填才启用; Key / Base URL 留空时运行期回退到大模型的对应值。
+            conn.execute(
+                """ALTER TABLE user_model_settings
+                   ADD COLUMN IF NOT EXISTS embedding_api_key TEXT NOT NULL DEFAULT '',
+                   ADD COLUMN IF NOT EXISTS embedding_model TEXT NOT NULL DEFAULT '',
+                   ADD COLUMN IF NOT EXISTS embedding_base_url TEXT NOT NULL DEFAULT ''"""
+            )
         _schema_ok = True
     except Exception:
         _schema_ok = False

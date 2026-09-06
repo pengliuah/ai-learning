@@ -128,6 +128,9 @@ export interface ModelSettings {
   model: string;
   baseUrl: string;
   maxTokens: number;
+  embeddingApiKey: string;
+  embeddingModel: string;
+  embeddingBaseUrl: string;
 }
 
 export interface ModelSettingsUpdate {
@@ -135,6 +138,9 @@ export interface ModelSettingsUpdate {
   model?: string | null;
   baseUrl?: string | null;
   maxTokens?: number | null;
+  embeddingApiKey?: string | null;
+  embeddingModel?: string | null;
+  embeddingBaseUrl?: string | null;
 }
 
 export interface UsageStat {

@@ -53,11 +53,15 @@ export function ModelSettings() {
   const updateMutation = useUpdateModelSettings();
   const { toast } = useToast();
   const [showKey, setShowKey] = useState(false);
+  const [showEmbeddingKey, setShowEmbeddingKey] = useState(false);
 
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [maxTokens, setMaxTokens] = useState(8192);
+  const [embeddingApiKey, setEmbeddingApiKey] = useState("");
+  const [embeddingModel, setEmbeddingModel] = useState("");
+  const [embeddingBaseUrl, setEmbeddingBaseUrl] = useState("");
 
   useEffect(() => {
     if (data) {
@@ -65,12 +69,15 @@ export function ModelSettings() {
       setModel(data.model);
       setBaseUrl(data.baseUrl);
       if (data.maxTokens !== undefined) setMaxTokens(data.maxTokens);
+      setEmbeddingApiKey(data.embeddingApiKey ?? "");
+      setEmbeddingModel(data.embeddingModel ?? "");
+      setEmbeddingBaseUrl(data.embeddingBaseUrl ?? "");
     }
   }, [data]);
 
   const handleSave = () => {
     updateMutation.mutate(
-      { apiKey, model, baseUrl, maxTokens },
+      { apiKey, model, baseUrl, maxTokens, embeddingApiKey, embeddingModel, embeddingBaseUrl },
       {
         onSuccess: () => toast("模型设置已保存", "success"),
         onError: (e) => toast(`保存失败：${(e as Error).message}`, "error"),
@@ -100,7 +107,7 @@ export function ModelSettings() {
       <UsageCard />
 
       <section className="mb-6 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">API 连接配置</h2>
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">大模型配置</h2>
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
           对当前账号生效，用于本账号的所有 AI 生成任务。配置只保存在数据库中；未配置时 AI 生成功能不可用。
         </p>
@@ -167,6 +174,58 @@ export function ModelSettings() {
               tokens（模块内容较长时建议适当调大，如 16384 或 32768）
             </span>
           </div>
+        </label>
+      </section>
+
+      <section className="mb-6 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">向量模型配置</h2>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          用于长期记忆等向量化任务。API Key 和 Base URL 留空时自动复用上方大模型的对应值（同一服务商下常见）。
+        </p>
+
+        <label className="mt-3 block text-xs font-medium text-gray-600 dark:text-gray-300">
+          模型名称
+          <input
+            type="text"
+            value={embeddingModel}
+            onChange={(e) => setEmbeddingModel(e.target.value)}
+            placeholder="如 doubao-embedding、text-embedding-3-small、BAAI/bge-m3"
+            className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+          />
+        </label>
+
+        <label className="mt-3 block text-xs font-medium text-gray-600 dark:text-gray-300">
+          API Key
+          <span className="ml-1 font-normal text-gray-400 dark:text-gray-500">（选填，留空复用大模型 Key）</span>
+          <div className="relative mt-1">
+            <input
+              type={showEmbeddingKey ? "text" : "password"}
+              value={embeddingApiKey}
+              onChange={(e) => setEmbeddingApiKey(e.target.value)}
+              placeholder="sk-..."
+              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 pr-9 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+            />
+            <button
+              type="button"
+              onClick={() => setShowEmbeddingKey((v) => !v)}
+              className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+              aria-label={showEmbeddingKey ? "隐藏" : "显示"}
+            >
+              {showEmbeddingKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+        </label>
+
+        <label className="mt-3 block text-xs font-medium text-gray-600 dark:text-gray-300">
+          Base URL
+          <span className="ml-1 font-normal text-gray-400 dark:text-gray-500">（选填，留空复用大模型 Base URL）</span>
+          <input
+            type="text"
+            value={embeddingBaseUrl}
+            onChange={(e) => setEmbeddingBaseUrl(e.target.value)}
+            placeholder="https://ark.cn-beijing.volces.com/api/v3"
+            className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+          />
         </label>
       </section>
 

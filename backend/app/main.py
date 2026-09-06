@@ -959,6 +959,9 @@ def get_model_settings(user: dict = Depends(get_current_user)):
     return ModelSettings(
         apiKey=row["api_key"], model=row["model"],
         baseUrl=row["base_url"], maxTokens=row["max_tokens"],
+        embeddingApiKey=row.get("embedding_api_key") or "",
+        embeddingModel=row.get("embedding_model") or "",
+        embeddingBaseUrl=row.get("embedding_base_url") or "",
     )
 
 
@@ -971,15 +974,21 @@ def put_model_settings(req: ModelSettingsUpdate, user: dict = Depends(get_curren
         model=req.model,
         base_url=req.baseUrl,
         max_tokens=req.maxTokens,
+        embedding_api_key=req.embeddingApiKey,
+        embedding_model=req.embeddingModel,
+        embedding_base_url=req.embeddingBaseUrl,
     )
     reset = getattr(coach, "reset_model_runtime", None)
     if reset:
         reset()
-    logger.info("put_model_settings: updated (key set=%s, model set=%s)",
-                bool(row["api_key"]), bool(row["model"]))
+    logger.info("put_model_settings: updated (key set=%s, model set=%s, embedding set=%s)",
+                bool(row["api_key"]), bool(row["model"]), bool(row.get("embedding_model")))
     return ModelSettings(
         apiKey=row["api_key"], model=row["model"],
         baseUrl=row["base_url"], maxTokens=row["max_tokens"],
+        embeddingApiKey=row.get("embedding_api_key") or "",
+        embeddingModel=row.get("embedding_model") or "",
+        embeddingBaseUrl=row.get("embedding_base_url") or "",
     )
 
 

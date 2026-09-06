@@ -245,14 +245,19 @@ CREATE TRIGGER user_gen_settings_set_updated_at
 -- API Key / 模型 / Base URL 在网页「模型设置」中配置并保存到此表（按用户）。
 -- 空值回退到 ARK_* 环境变量及内置默认值，因此环境变量仍可作为部署级的
 -- 初始配置。
+-- embedding_* 三列为「向量模型配置」：模型名必填才启用；Key / Base URL
+-- 留空时运行期回退到大模型的对应值（同一服务商下常见）。
 -- ---------------------------------------------------------------------------
 CREATE TABLE user_model_settings (
-    user_id     UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    api_key     TEXT NOT NULL DEFAULT '',
-    model       TEXT NOT NULL DEFAULT '',
-    base_url    TEXT NOT NULL DEFAULT '',
-    max_tokens  INTEGER NOT NULL DEFAULT 8192,
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    user_id             UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    api_key             TEXT NOT NULL DEFAULT '',
+    model               TEXT NOT NULL DEFAULT '',
+    base_url            TEXT NOT NULL DEFAULT '',
+    max_tokens          INTEGER NOT NULL DEFAULT 8192,
+    embedding_api_key   TEXT NOT NULL DEFAULT '',
+    embedding_model     TEXT NOT NULL DEFAULT '',
+    embedding_base_url  TEXT NOT NULL DEFAULT '',
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE TRIGGER user_model_settings_set_updated_at
     BEFORE UPDATE ON user_model_settings

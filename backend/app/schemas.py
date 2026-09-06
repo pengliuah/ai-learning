@@ -201,6 +201,10 @@ class ModelSettings(BaseModel):
     model: str = ""
     baseUrl: str = ""
     maxTokens: int = 8192
+    # 向量模型配置（用于记忆检索等向量化任务）
+    embeddingApiKey: str = ""
+    embeddingModel: str = ""
+    embeddingBaseUrl: str = ""
 
 
 class ModelSettingsUpdate(BaseModel):
@@ -210,6 +214,9 @@ class ModelSettingsUpdate(BaseModel):
     model: str | None = None
     baseUrl: str | None = None
     maxTokens: int | None = Field(default=None, ge=1)
+    embeddingApiKey: str | None = None
+    embeddingModel: str | None = None
+    embeddingBaseUrl: str | None = None
 
 
 class ModelTestResult(BaseModel):

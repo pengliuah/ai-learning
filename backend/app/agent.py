@@ -662,7 +662,12 @@ class LearningCoach:
         # 长期记忆: 用本轮 goal 检索该用户的跨会话事实, 注入最前 (失败返回空串)
         recalled = await long_memory.recall(user_id, goal)
         if recalled:
-            messages.insert(0, SystemMessage(content=f"[该学员的长期记忆，供参考]\n{recalled}"))
+            messages.insert(0, SystemMessage(content=(
+                "[你此前与这位学员对话时记住的真实信息]\n"
+                f"{recalled}\n"
+                "这是你自己的长期记忆：学员问你是否记得 TA 或相关内容时，"
+                "请自然地依据以上信息回答，不要否认记得。"
+            )))
         messages.append(HumanMessage(content=goal))
         _log_llm_messages("coach", messages)
         return messages

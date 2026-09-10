@@ -480,6 +480,24 @@ def init_schema() -> None:
                    ADD COLUMN IF NOT EXISTS embedding_model TEXT NOT NULL DEFAULT '',
                    ADD COLUMN IF NOT EXISTS embedding_base_url TEXT NOT NULL DEFAULT ''"""
             )
+
+            # 长期记忆总开关 (幂等): 关掉后教练对话不写入/不召回。
+            if not conn.execute(
+                "SELECT to_regclass('public.user_memory_settings')"
+            ).fetchone()[0]:
+                conn.execute(
+                    """CREATE TABLE user_memory_settings (
+                           user_id    UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                           enabled    BOOLEAN NOT NULL DEFAULT true,
+                           updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                       )"""
+                )
+                conn.execute(
+                    """CREATE TRIGGER user_memory_settings_set_updated_at
+                       BEFORE UPDATE ON user_memory_settings
+                       FOR EACH ROW EXECUTE FUNCTION set_updated_at()"""
+                )
+                logger.info("init_schema: user_memory_settings table added")
         _schema_ok = True
     except Exception:
         _schema_ok = False

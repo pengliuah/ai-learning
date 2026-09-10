@@ -1,4 +1,4 @@
-import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary, Annotation, BookmarkItem, SaveToImaRequest, SaveToImaResponse, User, AuthResponse, AdminUserCreateInput } from "./types";
+import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary, Annotation, BookmarkItem, MemoryItem, MemorySettings, MemorySettingsUpdate, SaveToImaRequest, SaveToImaResponse, User, AuthResponse, AdminUserCreateInput } from "./types";
 
 /**
  * 后端 API 基址。
@@ -272,6 +272,21 @@ export const api = {
 
   // 书签列表：当前用户跨计划/模块的全部书签
   listBookmarks: () => json<BookmarkItem[]>(`/annotations`),
+
+  // 长期记忆（Mem0）：列表 / 删除 / 总开关
+  listMemories: () => json<MemoryItem[]>(`/memories`),
+
+  deleteMemory: (memoryId: string) =>
+    json<{ deleted: string }>(`/memories/${memoryId}`, { method: "DELETE" }),
+
+  getMemorySettings: () => json<MemorySettings>("/settings/memory"),
+
+  updateMemorySettings: (data: MemorySettingsUpdate) =>
+    json<MemorySettings>("/settings/memory", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
 
   saveAnswers: (planId: string, moduleId: string, answers: Record<string, string>) =>
     json<Document>(`/plans/${planId}/modules/${moduleId}/answers`, {

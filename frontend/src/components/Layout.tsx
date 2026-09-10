@@ -53,7 +53,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <Link
                   to="/bookmarks"
                   className="max-w-24 truncate rounded px-1 py-0.5 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-                  title="我的书签"
+                  title="我的记录"
                 >
                   {user.username}
                 </Link>

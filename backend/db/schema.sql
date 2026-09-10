@@ -264,6 +264,18 @@ CREATE TRIGGER user_model_settings_set_updated_at
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ---------------------------------------------------------------------------
+-- user_memory_settings  -  长期记忆总开关（关掉=教练不写入不召回）
+-- ---------------------------------------------------------------------------
+CREATE TABLE user_memory_settings (
+    user_id    UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    enabled    BOOLEAN NOT NULL DEFAULT true,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TRIGGER user_memory_settings_set_updated_at
+    BEFORE UPDATE ON user_memory_settings
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ---------------------------------------------------------------------------
 -- token_usage  -  per-user token 用量统计 (大模型 + 嵌入模型)
 --
 -- 每次 LLM/embedding 调用成功后写入一行 (按用户), 用于「模型设置」页展示

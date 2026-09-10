@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 COLLECTION_PREFIX = "zhixue_memory"
 MAX_CACHED_INSTANCES = 8
 RECALL_LIMIT = 5
+LIST_LIMIT = 100
 
 CUSTOM_INSTRUCTIONS = (
     "只记录与学生学习相关、值得跨会话记住的事实（年级/学科/薄弱知识点/学习偏好/目标约定），"
@@ -265,12 +266,24 @@ def clear_cache() -> None:
     _cache.clear()
 
 
+def _format_memory_item(it: dict) -> dict:
+    """把 mem0 结果项规范成 API 用的 dict（id / memory / createdAt / updatedAt）。"""
+    return {
+        "id": str(it.get("id") or ""),
+        "memory": (it.get("memory") or "").strip(),
+        "createdAt": it.get("created_at"),
+        "updatedAt": it.get("updated_at"),
+    }
+
+
 async def recall(user_id: str, query: str, limit: int = RECALL_LIMIT) -> str:
     """检索该用户的长期记忆，返回 "• 事实" 多行文本；无记忆/未启用/失败返回 ""。
 
     任何异常都吞掉并只打日志 —— 记忆检索绝不能让教练对话失败。
     """
     if not user_id or not query.strip():
+        return ""
+    if not store.is_memory_enabled(user_id):
         return ""
     try:
         mem = _get_instance(user_id)
@@ -301,6 +314,9 @@ async def remember(user_id: str, goal: str, reply: str) -> None:
     reply = (reply or "").strip()
     if not user_id or not goal or not reply:
         return
+    if not store.is_memory_enabled(user_id):
+        logger.debug("long_memory: 总开关关闭，跳过写入 (user=%s)", user_id)
+        return
     try:
         mem = _get_instance(user_id)
         if mem is None:
@@ -318,6 +334,63 @@ async def remember(user_id: str, goal: str, reply: str) -> None:
         logger.info("long_memory: memory written (user=%s, goal=%d chars)", user_id, len(goal))
     except Exception as exc:
         logger.warning("long_memory.remember failed (user=%s): %s", user_id, exc)
+
+
+async def list_memories(user_id: str, limit: int = LIST_LIMIT) -> list[dict]:
+    """列出该用户的长期记忆；未配置模型或失败时返回空列表。
+
+    管理页用：总开关关闭时仍可查看已有记忆。
+    """
+    if not user_id:
+        return []
+    try:
+        mem = _get_instance(user_id)
+        if mem is None:
+            return []
+        result = await asyncio.to_thread(
+            mem.get_all,
+            filters={"user_id": user_id},
+            top_k=limit,
+        )
+        items = (result or {}).get("results") or []
+        out = [_format_memory_item(it) for it in items if it.get("memory")]
+        return [m for m in out if m["id"]]
+    except Exception as exc:
+        logger.warning("long_memory.list_memories failed (user=%s): %s", user_id, exc)
+        return []
+
+
+async def delete_memory(user_id: str, memory_id: str) -> bool:
+    """删除一条属于该用户的记忆。成功 True；不存在或不属于该用户 False。
+
+    未配置模型时无法访问向量库，返回 False。
+    """
+    memory_id = (memory_id or "").strip()
+    if not user_id or not memory_id:
+        return False
+    try:
+        mem = _get_instance(user_id)
+        if mem is None:
+            return False
+
+        def _owned_delete() -> bool:
+            existing = mem.get(memory_id)
+            if not existing:
+                return False
+            # 只允许删自己的记忆（mem0 按 id 全局查，必须校验 user_id）
+            if str(existing.get("user_id") or "") != str(user_id):
+                return False
+            mem.delete(memory_id)
+            return True
+
+        ok = await asyncio.to_thread(_owned_delete)
+        if ok:
+            logger.info("long_memory: deleted (user=%s, id=%s)", user_id, memory_id)
+        return ok
+    except Exception as exc:
+        logger.warning("long_memory.delete_memory failed (user=%s, id=%s): %s",
+                       user_id, memory_id, exc)
+        return False
 
 
 def remember_background(user_id: str, goal: str, reply: str) -> None:

@@ -15,11 +15,27 @@ from app import long_memory, store
 
 
 class _FakeMemory:
-    def __init__(self, results=None, fail=False):
+    def __init__(self, results=None, fail=False, get_all_results=None, get_map=None):
         self._results = results if results is not None else [{"memory": "学生喜欢天文", "score": 0.8}]
+        self._get_all_results = (
+            get_all_results
+            if get_all_results is not None
+            else [
+                {
+                    "id": "m1",
+                    "memory": "学生喜欢天文",
+                    "user_id": None,  # filled per-call if needed
+                    "created_at": "2026-09-01T00:00:00Z",
+                    "updated_at": None,
+                }
+            ]
+        )
+        self._get_map = get_map if get_map is not None else {}
         self._fail = fail
         self.searches: list[tuple] = []
         self.adds: list[tuple] = []
+        self.get_alls: list[tuple] = []
+        self.deletes: list[str] = []
         self.closed = False
 
     def search(self, query, **kwargs):
@@ -32,6 +48,23 @@ class _FakeMemory:
         if self._fail:
             raise RuntimeError("add boom")
         self.adds.append((messages, kwargs))
+
+    def get_all(self, **kwargs):
+        if self._fail:
+            raise RuntimeError("get_all boom")
+        self.get_alls.append(kwargs)
+        return {"results": self._get_all_results}
+
+    def get(self, memory_id):
+        if self._fail:
+            raise RuntimeError("get boom")
+        return self._get_map.get(memory_id)
+
+    def delete(self, memory_id):
+        if self._fail:
+            raise RuntimeError("delete boom")
+        self.deletes.append(memory_id)
+        return {"message": "ok"}
 
     def close(self):
         self.closed = True
@@ -197,3 +230,90 @@ def test_configured_user_can_build_instance(tmp_store, admin_user):
         long_memory.OpenAI = orig_openai
     assert mem is not None
     mem.close()
+
+
+def test_master_switch_skips_recall_and_remember(tmp_store, admin_user):
+    """总开关关闭时 recall/remember 静默跳过（不触碰 mem0）。"""
+    user_id = _configure_models(admin_user)
+    store.update_memory_settings(user_id, enabled=False)
+    fake = _FakeMemory()
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    try:
+        assert asyncio.run(long_memory.recall(user_id, "hi")) == ""
+        asyncio.run(long_memory.remember(user_id, "goal", "reply"))
+        assert fake.searches == []
+        assert fake.adds == []
+    finally:
+        long_memory._cache = original
+        store.update_memory_settings(user_id, enabled=True)
+
+
+def test_list_memories_formats(tmp_store, admin_user):
+    user_id = _configure_models(admin_user)
+    fake = _FakeMemory(
+        get_all_results=[
+            {
+                "id": "abc",
+                "memory": "学生喜欢天文",
+                "created_at": "2026-09-01T00:00:00Z",
+                "updated_at": None,
+            },
+            {"id": "", "memory": "应被丢掉"},
+            {"id": "xyz", "memory": ""},
+        ]
+    )
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    try:
+        items = asyncio.run(long_memory.list_memories(user_id))
+    finally:
+        long_memory._cache = original
+    assert items == [
+        {
+            "id": "abc",
+            "memory": "学生喜欢天文",
+            "createdAt": "2026-09-01T00:00:00Z",
+            "updatedAt": None,
+        }
+    ]
+    assert fake.get_alls[0]["filters"] == {"user_id": user_id}
+
+
+def test_delete_memory_checks_ownership(tmp_store, admin_user):
+    user_id = _configure_models(admin_user)
+    fake = _FakeMemory(
+        get_map={
+            "mine": {"id": "mine", "memory": "x", "user_id": user_id},
+            "theirs": {"id": "theirs", "memory": "y", "user_id": "other"},
+        }
+    )
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    try:
+        assert asyncio.run(long_memory.delete_memory(user_id, "mine")) is True
+        assert asyncio.run(long_memory.delete_memory(user_id, "theirs")) is False
+        assert asyncio.run(long_memory.delete_memory(user_id, "missing")) is False
+    finally:
+        long_memory._cache = original
+    assert fake.deletes == ["mine"]
+
+
+def test_list_and_delete_when_disabled_still_work(tmp_store, admin_user):
+    """总开关关闭时仍可 list/delete（管理页要能清掉旧记忆）。"""
+    user_id = _configure_models(admin_user)
+    store.update_memory_settings(user_id, enabled=False)
+    fake = _FakeMemory(
+        get_all_results=[{"id": "m1", "memory": "旧事实", "created_at": None, "updated_at": None}],
+        get_map={"m1": {"id": "m1", "memory": "旧事实", "user_id": user_id}},
+    )
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    try:
+        items = asyncio.run(long_memory.list_memories(user_id))
+        assert len(items) == 1
+        assert asyncio.run(long_memory.delete_memory(user_id, "m1")) is True
+    finally:
+        long_memory._cache = original
+        store.update_memory_settings(user_id, enabled=True)
+    assert fake.deletes == ["m1"]

@@ -233,3 +233,19 @@ export interface BookmarkItem {
   note: string;
   createdAt: string;
 }
+
+// 长期记忆（Mem0 事实，GET /api/memories）
+export interface MemoryItem {
+  id: string;
+  memory: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface MemorySettings {
+  enabled: boolean;
+}
+
+export interface MemorySettingsUpdate {
+  enabled?: boolean;
+}

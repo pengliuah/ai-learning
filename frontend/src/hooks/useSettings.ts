@@ -1,12 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary } from "../api/types";
+import type { ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary, MemorySettingsUpdate } from "../api/types";
 
 export const SETTINGS_KEYS = {
   ima: ["settings", "ima"] as const,
   regen: ["settings", "regen"] as const,
   model: ["settings", "model"] as const,
   usage: ["settings", "usage"] as const,
+  memory: ["settings", "memory"] as const,
+};
+
+export const MEMORY_KEYS = {
+  list: ["memories"] as const,
 };
 
 export function useUsageSummary() {
@@ -64,6 +69,40 @@ export function useUpdateModelSettings() {
     onSuccess: (data) => {
       qc.setQueryData(SETTINGS_KEYS.model, data);
       qc.invalidateQueries({ queryKey: ["health"] });
+    },
+  });
+}
+
+export function useMemorySettings() {
+  return useQuery({
+    queryKey: SETTINGS_KEYS.memory,
+    queryFn: () => api.getMemorySettings(),
+  });
+}
+
+export function useUpdateMemorySettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: MemorySettingsUpdate) => api.updateMemorySettings(data),
+    onSuccess: (data) => {
+      qc.setQueryData(SETTINGS_KEYS.memory, data);
+    },
+  });
+}
+
+export function useMemories() {
+  return useQuery({
+    queryKey: MEMORY_KEYS.list,
+    queryFn: () => api.listMemories(),
+  });
+}
+
+export function useDeleteMemory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (memoryId: string) => api.deleteMemory(memoryId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: MEMORY_KEYS.list });
     },
   });
 }

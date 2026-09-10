@@ -226,6 +226,24 @@ class ModelTestResult(BaseModel):
     model: str = ""
 
 
+class MemorySettings(BaseModel):
+    """长期记忆总开关。关掉后教练对话不写入、不召回。"""
+    enabled: bool = True
+
+
+class MemorySettingsUpdate(BaseModel):
+    """PUT /api/settings/memory request body."""
+    enabled: bool | None = None
+
+
+class MemoryOut(BaseModel):
+    """单条长期记忆（Mem0 事实）。"""
+    id: str
+    memory: str
+    createdAt: str | None = None
+    updatedAt: str | None = None
+
+
 class SaveToImaRequest(BaseModel):
     """Save-to-IMA request body.
 

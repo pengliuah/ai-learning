@@ -657,6 +657,52 @@ def is_embedding_configured_for_user(user_id: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Memory settings (per-user master switch for long-term Mem0 memory)
+# ---------------------------------------------------------------------------
+
+def get_memory_settings_row(user_id: str) -> dict:
+    """Return ``{"enabled": bool}``, creating a default (enabled=true) row if missing."""
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT enabled FROM user_memory_settings WHERE user_id = %s", (user_id,)
+        ).fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO user_memory_settings (user_id) VALUES (%s)", (user_id,)
+            )
+            row = conn.execute(
+                "SELECT enabled FROM user_memory_settings WHERE user_id = %s", (user_id,)
+            ).fetchone()
+    return {"enabled": bool(row["enabled"])}
+
+
+def update_memory_settings(user_id: str, enabled: bool | None = None) -> dict:
+    """Update the memory master switch (only non-None fields)."""
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT INTO user_memory_settings (user_id) VALUES (%s) ON CONFLICT DO NOTHING",
+            (user_id,),
+        )
+        if enabled is not None:
+            conn.execute(
+                "UPDATE user_memory_settings SET enabled = %s WHERE user_id = %s",
+                (enabled, user_id),
+            )
+        row = conn.execute(
+            "SELECT enabled FROM user_memory_settings WHERE user_id = %s", (user_id,)
+        ).fetchone()
+    return {"enabled": bool(row["enabled"])}
+
+
+def is_memory_enabled(user_id: str) -> bool:
+    """True when the user's long-term memory master switch is on (default true)."""
+    try:
+        return bool(get_memory_settings_row(user_id)["enabled"])
+    except Exception:
+        return True
+
+
+# ---------------------------------------------------------------------------
 # Token usage (per-user LLM 用量统计)
 #
 # 每次 LLM 调用成功后由 agent 层写入一行, 供「模型设置」页展示

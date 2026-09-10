@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 
-from . import store
+from . import long_memory, store
 from .agent import LearningCoach, _friendly_llm_error
 from .auth import (
     create_access_token,
@@ -45,6 +45,9 @@ from .schemas import (
     ImaSettings,
     ImaSettingsUpdate,
     LoginRequest,
+    MemoryOut,
+    MemorySettings,
+    MemorySettingsUpdate,
     ModelSettings,
     ModelSettingsUpdate,
     ModuleStatus,
@@ -996,6 +999,57 @@ def put_model_settings(req: ModelSettingsUpdate, user: dict = Depends(get_curren
 def usage_summary(user: dict = Depends(get_current_user)):
     """当前用户的 LLM token 用量统计（今日 / 本月 / 累计，东八区）。"""
     return store.get_usage_summary(str(user["id"]))
+
+
+@app.get("/api/settings/memory")
+def get_memory_settings(user: dict = Depends(get_current_user)):
+    """读取长期记忆总开关（默认开启）。关掉后教练对话不写入、不召回。"""
+    row = store.get_memory_settings_row(str(user["id"]))
+    return MemorySettings(enabled=row["enabled"])
+
+
+@app.put("/api/settings/memory")
+def put_memory_settings(req: MemorySettingsUpdate, user: dict = Depends(get_current_user)):
+    """更新长期记忆总开关。"""
+    row = store.update_memory_settings(str(user["id"]), enabled=req.enabled)
+    logger.info("put_memory_settings: enabled=%s user=%s", row["enabled"], user["username"])
+    return MemorySettings(enabled=row["enabled"])
+
+
+@app.get("/api/memories")
+async def list_memories(user: dict = Depends(get_current_user)):
+    """列出当前用户的长期记忆（Mem0 事实列表）。
+
+    模型未配置时返回空列表；总开关关闭时仍可查看已有记忆。
+    """
+    uid = str(user["id"])
+    items = await long_memory.list_memories(uid)
+    return [
+        MemoryOut(
+            id=m["id"],
+            memory=m["memory"],
+            createdAt=m.get("createdAt"),
+            updatedAt=m.get("updatedAt"),
+        )
+        for m in items
+    ]
+
+
+@app.delete("/api/memories/{memory_id}")
+async def delete_memory(memory_id: str, user: dict = Depends(get_current_user)):
+    """删除一条属于当前用户的长期记忆。
+
+    返回:
+        200 ``{"deleted": "<id>"}``
+
+    错误:
+        - 404: 记忆不存在或不属于当前用户（含模型未配置无法访问）。
+    """
+    uid = str(user["id"])
+    ok = await long_memory.delete_memory(uid, memory_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="记忆不存在或无权删除")
+    return {"deleted": memory_id}
 
 
 @app.post("/api/plans/{plan_id}/save-to-ima")

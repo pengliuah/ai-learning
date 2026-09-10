@@ -1,6 +1,9 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Send, Loader2, AlertCircle, ArrowRight, ClipboardList, Search, Trash2 } from "lucide-react";
+import {
+  ArrowLeft, Send, Loader2, AlertCircle, ArrowRight, ClipboardList,
+  Search, Trash2, Copy, Check,
+} from "lucide-react";
 import { Markdown } from "../components/Markdown";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -118,10 +121,24 @@ export function Coach() {
   });
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // 仅当用户贴近底部时才自动跟随流式滚动，上滑查看历史时不抢滚动条
+  const stickToBottom = useRef(true);
+
+  const onMessagesScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+  }, []);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    if (!stickToBottom.current) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    // 流式过程用瞬时定位，避免 smooth 与内容增高互相抢滚动条
+    el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   useEffect(() => {
@@ -142,13 +159,27 @@ export function Coach() {
     }
   }, [searchParams]);
 
+  const copyUserMessage = async (m: Message) => {
+    try {
+      await navigator.clipboard.writeText(m.content);
+      setInput(m.content);
+      setCopiedId(m.id);
+      setTimeout(() => setCopiedId((id) => (id === m.id ? null : id)), 1500);
+    } catch {
+      // clipboard 不可用时仍填入输入框，方便再次发送
+      setInput(m.content);
+    }
+  };
+
   const handleSend = async (text?: string) => {
     const goal = (text ?? input).trim();
     if (!goal || streaming) return;
 
     const assistantId = uid();
     setInput("");
+    setSelectedUserId(null);
     setStreaming(true);
+    stickToBottom.current = true;
     setMessages((prev) => [
       ...prev,
       { id: uid(), role: "user", content: goal },
@@ -208,9 +239,9 @@ export function Coach() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="mb-3 flex items-center gap-3">
+      <div className="mb-3 flex shrink-0 items-center gap-3">
         <button
           onClick={() => navigate("/")}
           className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
@@ -231,8 +262,12 @@ export function Coach() {
         </button>
       </div>
 
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto">
+      {/* Messages —— 唯一滚动区 */}
+      <div
+        ref={scrollRef}
+        onScroll={onMessagesScroll}
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto"
+      >
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -255,8 +290,40 @@ export function Coach() {
         {messages.map((m) => (
           <div key={m.id} className={m.role === "user" ? "flex justify-end" : ""}>
             {m.role === "user" ? (
-              <div className="max-w-[80%] rounded-lg bg-indigo-600 px-4 py-2.5 text-sm text-white">
-                <p className="whitespace-pre-wrap">{m.content}</p>
+              <div className={["relative max-w-[80%]", selectedUserId === m.id && "mb-8"].filter(Boolean).join(" ")}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedUserId((id) => (id === m.id ? null : m.id))
+                  }
+                  className={[
+                    "w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-left text-sm text-white",
+                    selectedUserId === m.id && "ring-2 ring-indigo-300 ring-offset-1 dark:ring-offset-gray-900",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  <p className="whitespace-pre-wrap">{m.content}</p>
+                </button>
+                {selectedUserId === m.id && (
+                  <button
+                    type="button"
+                    onClick={() => copyUserMessage(m)}
+                    className="absolute top-full right-0 mt-1.5 z-10 inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                  >
+                    {copiedId === m.id ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 text-green-600" />
+                        已复制
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" />
+                        复制
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             ) : (
               <div className="w-full">
@@ -294,7 +361,7 @@ export function Coach() {
       </div>
 
       {/* Input */}
-      <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
+      <div className="shrink-0 border-t border-gray-200 pt-3 dark:border-gray-700">
         <div className="flex items-end gap-2">
           <textarea
             value={input}

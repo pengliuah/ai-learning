@@ -72,8 +72,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <div className="shrink-0">
         <HealthBanner />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6">{children}</main>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <main className="mx-auto flex w-full max-w-5xl min-h-0 flex-1 flex-col overflow-y-auto px-4 py-6">{children}</main>
       </div>
     </div>
   );

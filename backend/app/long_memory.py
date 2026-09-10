@@ -276,6 +276,11 @@ def _format_memory_item(it: dict) -> dict:
     }
 
 
+def _memory_sort_key(item: dict) -> str:
+    """时间倒序排序键：优先 updatedAt，否则 createdAt；无时间沉底。"""
+    return item.get("updatedAt") or item.get("createdAt") or ""
+
+
 async def recall(user_id: str, query: str, limit: int = RECALL_LIMIT) -> str:
     """检索该用户的长期记忆，返回 "• 事实" 多行文本；无记忆/未启用/失败返回 ""。
 
@@ -354,7 +359,9 @@ async def list_memories(user_id: str, limit: int = LIST_LIMIT) -> list[dict]:
         )
         items = (result or {}).get("results") or []
         out = [_format_memory_item(it) for it in items if it.get("memory")]
-        return [m for m in out if m["id"]]
+        out = [m for m in out if m["id"]]
+        out.sort(key=_memory_sort_key, reverse=True)
+        return out
     except Exception as exc:
         logger.warning("long_memory.list_memories failed (user=%s): %s", user_id, exc)
         return []

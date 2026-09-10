@@ -280,6 +280,39 @@ def test_list_memories_formats(tmp_store, admin_user):
     assert fake.get_alls[0]["filters"] == {"user_id": user_id}
 
 
+def test_list_memories_sorted_newest_first(tmp_store, admin_user):
+    user_id = _configure_models(admin_user)
+    fake = _FakeMemory(
+        get_all_results=[
+            {
+                "id": "old",
+                "memory": "旧事实",
+                "created_at": "2026-09-01T10:00:00Z",
+                "updated_at": None,
+            },
+            {
+                "id": "new",
+                "memory": "新事实",
+                "created_at": "2026-09-01T08:00:00Z",
+                "updated_at": "2026-09-10T12:30:45Z",
+            },
+            {
+                "id": "mid",
+                "memory": "中间",
+                "created_at": "2026-09-05T00:00:00Z",
+                "updated_at": None,
+            },
+        ]
+    )
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    try:
+        items = asyncio.run(long_memory.list_memories(user_id))
+    finally:
+        long_memory._cache = original
+    assert [m["id"] for m in items] == ["new", "mid", "old"]
+
+
 def test_delete_memory_checks_ownership(tmp_store, admin_user):
     user_id = _configure_models(admin_user)
     fake = _FakeMemory(

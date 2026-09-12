@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import earthMapUrl from "../assets/planets/earth_atmos_2048.jpg";
-import earthSpecularUrl from "../assets/planets/earth_specular_2048.jpg";
 import earthLightsUrl from "../assets/planets/earth_lights_2048.png";
 import cloudsMapUrl from "../assets/planets/earth_clouds_1024.png";
 
@@ -159,10 +158,11 @@ export function SpaceScene({ className }: { className?: string }) {
     })();
     scene.add(galaxy);
 
-    // --- 地球组：昼夜着色器本体 + 云层 + 大气辉光 + 月球 ---
+    // --- 地球组：昼夜着色器本体 + 云层 + 大气辉光 ---
     const earthGroup = new THREE.Group();
     const tiltGroup = new THREE.Group();
     tiltGroup.rotation.z = THREE.MathUtils.degToRad(23.4); // 黄赤交角
+    tiltGroup.rotation.x = 0.28; // 北极向镜头倾，多露出北半球
     earthGroup.add(tiltGroup);
 
     // 1x1 占位贴图：贴图加载完成前渲染第一帧不报错
@@ -174,7 +174,6 @@ export function SpaceScene({ className }: { className?: string }) {
     const earthUniforms: Record<string, THREE.IUniform> = {
       dayMap: { value: placeholder(8, 14, 32) },
       nightMap: { value: placeholder(0, 0, 0) },
-      specMap: { value: placeholder(0, 0, 0) },
       sunDir: { value: SUN_DIR },
     };
     const earthMat = new THREE.ShaderMaterial({
@@ -194,7 +193,6 @@ export function SpaceScene({ className }: { className?: string }) {
       fragmentShader: `
         uniform sampler2D dayMap;
         uniform sampler2D nightMap;
-        uniform sampler2D specMap;
         uniform vec3 sunDir;
         varying vec2 vUv;
         varying vec3 vNormalW;
@@ -216,19 +214,9 @@ export function SpaceScene({ className }: { className?: string }) {
 
           vec3 color = mix(nightLit, dayLit, dayMix);
 
-          // 海面镜面反光（太阳耀斑，高光收紧成一小片）
-          float specMask = texture2D(specMap, vUv).r;
-          vec3 H = normalize(sunDir + V);
-          float spec = pow(max(dot(N, H), 0.0), 64.0) * specMask * dayMix;
-          color += spec * vec3(1.0, 0.85, 0.6) * 0.42;
-
           // 晨昏线暖色（日出日落带）
           float twilight = exp(-pow(sunDot / 0.13, 2.0));
           color += twilight * vec3(0.95, 0.4, 0.12) * 0.22;
-
-          // 边缘大气蓝（日面一侧更亮）
-          float fres = pow(1.0 - max(dot(N, V), 0.0), 2.6);
-          color += fres * vec3(0.25, 0.5, 1.0) * (0.3 + 0.45 * dayMix);
 
           gl_FragColor = vec4(color, 1.0);
           #include <colorspace_fragment>
@@ -236,6 +224,7 @@ export function SpaceScene({ className }: { className?: string }) {
       `,
     });
     const earth = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64), earthMat);
+    earth.rotation.y = 2.88; // 初始朝向：东经 105°（中国）正对镜头
     tiltGroup.add(earth);
 
     const cloudsMat = new THREE.MeshLambertMaterial({ transparent: true, opacity: 0.8, depthWrite: false });
@@ -371,13 +360,11 @@ export function SpaceScene({ className }: { className?: string }) {
 
     Promise.all([
       loadTexture(earthMapUrl, true),
-      loadTexture(earthSpecularUrl, false),
       loadTexture(earthLightsUrl, false),
       loadTexture(cloudsMapUrl, true),
-    ]).then(([earthMap, specMap, lightsMap, cloudsMap]) => {
+    ]).then(([earthMap, lightsMap, cloudsMap]) => {
       if (cancelled) return;
       if (earthMap) earthUniforms.dayMap.value = earthMap;
-      if (specMap) earthUniforms.specMap.value = specMap;
       if (lightsMap) earthUniforms.nightMap.value = lightsMap;
       if (cloudsMap) {
         cloudsMat.map = cloudsMap;

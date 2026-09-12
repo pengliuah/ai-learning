@@ -17,7 +17,8 @@
 #
 # 首次部署前 (见 DEPLOY.md):
 #   - root 能访问 git@github.com:pengliuah/zhixue.git (SSH key 放 /root/.ssh)
-#   - cp deploy.env.example .env && vi .env   # 设置 JWT_SECRET / ADMIN_PASSWORD / POSTGRES_PASSWORD
+#   - cp deploy.env.example .env && vi .env   # JWT_SECRET 缺失时脚本会自动生成;
+#     ADMIN_PASSWORD / POSTGRES_PASSWORD 需手动设置
 #   - prod 还需把域名证书放入 nginx/ssl/ (两个文件, 见 DEPLOY.md)
 #
 set -euo pipefail
@@ -109,7 +110,7 @@ if [ -f "$APP_DIR/.env" ]; then
   cp -a "$APP_DIR/.env" "$BACKUP_DIR/zhixue.env.bak.$ts"
   log "2/5 已备份 .env -> $BACKUP_DIR/zhixue.env.bak.$ts"
 else
-  warn "$APP_DIR/.env 不存在 — 部署后将用 deploy.env.example 的默认值 (JWT_SECRET 为空, ADMIN_PASSWORD 为空!)"
+  warn "$APP_DIR/.env 不存在 — 部署时将从 deploy.env.example 创建 (JWT_SECRET 会自动生成; ADMIN_PASSWORD 为空!)"
 fi
 
 # 备份清理: 每类备份只保留最新一份 (ls -t 按时间排, 当前这次的最新, 不会被删)。
@@ -157,9 +158,19 @@ if [ "$ENV" = "prod" ]; then
   log "4/5 证书文件校验通过"
 fi
 
-# JWT_SECRET 为空时给出提醒 (功能可用, 但重启会踢掉所有登录态)
-if [ -f "$APP_DIR/.env" ] && grep -qE '^JWT_SECRET=\s*$' "$APP_DIR/.env"; then
-  warn "JWT_SECRET 未设置: 每次重启后所有用户需重新登录, 建议在 .env 中配置"
+# JWT_SECRET: 必须跨重启稳定 —— 它既是登录令牌的签名密钥, 也是用户 API Key
+# 静态加密的密钥 (FIELD_SECRET 未设置时回退到它)。缺失/为空时自动生成强随机值
+# 写入 .env 持久化 (.env 走上面的备份/恢复流程), 之后每次部署复用同一个值。
+if grep -qE '^JWT_SECRET=..*' "$APP_DIR/.env"; then
+  log "4/5 JWT_SECRET 已配置"
+else
+  generated=$(head -c 48 /dev/urandom | base64 | tr -d '=+/\n')
+  if grep -qE '^JWT_SECRET=' "$APP_DIR/.env"; then
+    sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$generated/" "$APP_DIR/.env"
+  else
+    printf '\n# --- 登录令牌/敏感字段加密密钥 (deploy.sh 自动生成, 勿改勿删) ---\nJWT_SECRET=%s\n' "$generated" >> "$APP_DIR/.env"
+  fi
+  log "4/5 JWT_SECRET 缺失, 已自动生成并写入 .env"
 fi
 
 # 日志级别: 写入/更新 .env 的 LOG_LEVEL (无 .env 时先从模板创建)

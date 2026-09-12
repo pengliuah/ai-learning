@@ -73,7 +73,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <HealthBanner />
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <main className="mx-auto flex w-full max-w-5xl min-h-0 flex-1 flex-col overflow-y-auto px-4 py-6">{children}</main>
+        {/* 滚动容器通栏，滚动条贴窗口最右侧；限宽交给内层 */}
+        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6">{children}</div>
+        </main>
       </div>
     </div>
   );

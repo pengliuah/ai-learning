@@ -6,6 +6,26 @@ body {
   @apply bg-gray-50 text-gray-900 antialiased dark:bg-gray-900 dark:text-gray-100;
 }
 
+/* 细滚动条：贴边半透明，减少对页面的视觉干扰 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 184 / 0.45) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+  background: rgb(148 163 184 / 0.45);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(148 163 184 / 0.7);
+}
+
 /* KaTeX tags CJK characters with .cjk_fallback but ships no font for them.
    Provide a CJK font so formulas like F_{浮} render instead of boxes. */
 .cjk_fallback {

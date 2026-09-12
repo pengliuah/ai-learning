@@ -271,7 +271,7 @@ export function Coach() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="mx-auto mb-3 flex w-full max-w-3xl shrink-0 items-center gap-3 px-4 pt-4">
+      <div className="mx-auto mb-3 flex w-full max-w-5xl shrink-0 items-center gap-3 px-4 pt-4">
         <button
           onClick={() => navigate("/")}
           className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
@@ -318,7 +318,7 @@ export function Coach() {
         )}
 
         {messages.length > 0 && (
-          <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-2">
+          <div className="mx-auto w-full max-w-5xl space-y-4 px-4 py-2">
             {messages.map((m) => (
           <div key={m.id} className={m.role === "user" ? "flex justify-end" : ""}>
             {m.role === "user" ? (
@@ -395,7 +395,7 @@ export function Coach() {
       </div>
 
       {/* Input */}
-      <div className="mx-auto w-full max-w-3xl shrink-0 border-t border-gray-200 px-4 pb-4 pt-3 dark:border-gray-700">
+      <div className="mx-auto w-full max-w-5xl shrink-0 border-t border-gray-200 px-4 pb-4 pt-3 dark:border-gray-700">
         <div className="flex items-end gap-2">
           <textarea
             value={input}

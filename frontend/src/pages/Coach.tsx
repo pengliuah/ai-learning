@@ -271,7 +271,7 @@ export function Coach() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="mb-3 flex shrink-0 items-center gap-3">
+      <div className="mb-3 flex shrink-0 items-center gap-3 px-4 pt-4">
         <button
           onClick={() => navigate("/")}
           className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
@@ -292,14 +292,14 @@ export function Coach() {
         </button>
       </div>
 
-      {/* Messages —— 唯一滚动区 */}
+      {/* Messages —— 唯一滚动区（通栏，滚动条贴窗口边缘；内容居中限宽） */}
       <div
         ref={scrollRef}
         onScroll={onMessagesScroll}
-        className="min-h-0 flex-1 space-y-4 overflow-y-auto"
+        className="min-h-0 flex-1 overflow-y-auto"
       >
         {messages.length === 0 && (
-          <div className="flex h-full flex-col items-center justify-center gap-4">
+          <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">
               输入学习目标，AI 教练将与你对话
             </p>
@@ -317,7 +317,9 @@ export function Coach() {
           </div>
         )}
 
-        {messages.map((m) => (
+        {messages.length > 0 && (
+          <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-2">
+            {messages.map((m) => (
           <div key={m.id} className={m.role === "user" ? "flex justify-end" : ""}>
             {m.role === "user" ? (
               <div className={["relative max-w-[80%]", selectedUserId === m.id && "mb-8"].filter(Boolean).join(" ")}>
@@ -387,11 +389,13 @@ export function Coach() {
               </div>
             )}
           </div>
-        ))}
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Input */}
-      <div className="shrink-0 border-t border-gray-200 pt-3 dark:border-gray-700">
+      <div className="shrink-0 border-t border-gray-200 px-4 pb-4 pt-3 dark:border-gray-700">
         <div className="flex items-end gap-2">
           <textarea
             value={input}

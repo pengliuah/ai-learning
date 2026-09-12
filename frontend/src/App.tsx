@@ -89,7 +89,8 @@ function AppRoutes() {
         path="/coach"
         element={
           <RequireAuth>
-            <Layout>
+            {/* 教练页自带滚动区: 用 wide 布局, 滚动条贴窗口边缘 */}
+            <Layout wide>
               <Coach />
             </Layout>
           </RequireAuth>

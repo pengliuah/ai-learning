@@ -4,7 +4,7 @@ import { HealthBanner } from "./HealthBanner";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../auth/AuthContext";
 
-export function Layout({ children }: { children: React.ReactNode }) {
+export function Layout({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
   const { theme, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
 
@@ -75,11 +75,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* 滚动容器通栏，滚动条贴窗口最右侧；限宽交给内层。
             内层必须 min-h-0：否则教练页等自带滚动区的页面在内容变长时，
-            这一层会被内容撑高，出现外层+内层两条滚动条。 */}
+            这一层会被内容撑高，出现外层+内层两条滚动条。
+            wide 变体（教练页等自带滚动区的页面）：内层不限宽，
+            页面的滚动条才贴窗口边缘，内容由页面自己控制宽度。 */}
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col px-4 py-6">
-            {children}
-          </div>
+          {wide ? (
+            <div className="flex min-h-0 w-full flex-1 flex-col">{children}</div>
+          ) : (
+            <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col px-4 py-6">
+              {children}
+            </div>
+          )}
         </main>
       </div>
     </div>

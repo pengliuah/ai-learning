@@ -276,6 +276,35 @@ CREATE TRIGGER user_memory_settings_set_updated_at
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ---------------------------------------------------------------------------
+-- user_memory_profile  -  学生画像（长期记忆的摘要层）
+--
+-- 夜间整理任务由记忆事实清单 LLM 总结生成；召回时先注入画像再注入原子事实。
+-- 画像不是向量，直接存普通表。
+-- ---------------------------------------------------------------------------
+CREATE TABLE user_memory_profile (
+    user_id    UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    profile    TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TRIGGER user_memory_profile_set_updated_at
+    BEFORE UPDATE ON user_memory_profile
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- memory_housekeeping  -  记忆夜间整理的推进水位
+--
+-- 记录每个用户上次被整理任务处理的时间；任务每轮挑选落后最久的用户处理。
+-- ---------------------------------------------------------------------------
+CREATE TABLE memory_housekeeping (
+    user_id     UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    last_run_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TRIGGER memory_housekeeping_set_updated_at
+    BEFORE UPDATE ON memory_housekeeping
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ---------------------------------------------------------------------------
 -- token_usage  -  per-user token 用量统计 (大模型 + 嵌入模型)
 --
 -- 每次 LLM/embedding 调用成功后写入一行 (按用户), 用于「模型设置」页展示

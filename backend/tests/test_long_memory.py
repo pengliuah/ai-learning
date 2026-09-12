@@ -8,14 +8,35 @@ task helper.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 
 import pytest
 
 from app import long_memory, store
 
 
+class _FakeLLM:
+    """mem0 LLM 桩：按顺序吐出预设回复，记录调用到的消息。"""
+
+    def __init__(self, responses=None):
+        self.responses = list(responses or [])
+        self.calls: list = []
+
+    def generate_response(self, messages, **kwargs):
+        self.calls.append(messages)
+        return self.responses.pop(0) if self.responses else ""
+
+
 class _FakeMemory:
-    def __init__(self, results=None, fail=False, get_all_results=None, get_map=None):
+    def __init__(
+        self,
+        results=None,
+        fail=False,
+        get_all_results=None,
+        get_map=None,
+        add_result=None,
+        llm_responses=None,
+    ):
         self._results = results if results is not None else [{"memory": "学生喜欢天文", "score": 0.8}]
         self._get_all_results = (
             get_all_results
@@ -31,11 +52,14 @@ class _FakeMemory:
             ]
         )
         self._get_map = get_map if get_map is not None else {}
+        self._add_result = add_result
         self._fail = fail
         self.searches: list[tuple] = []
         self.adds: list[tuple] = []
+        self.updates: list[dict] = []
         self.get_alls: list[tuple] = []
         self.deletes: list[str] = []
+        self.llm = _FakeLLM(llm_responses)
         self.closed = False
 
     def search(self, query, **kwargs):
@@ -48,6 +72,13 @@ class _FakeMemory:
         if self._fail:
             raise RuntimeError("add boom")
         self.adds.append((messages, kwargs))
+        return self._add_result
+
+    def update(self, memory_id, text=None, metadata=None):
+        if self._fail:
+            raise RuntimeError("update boom")
+        self.updates.append({"id": memory_id, "text": text, "metadata": metadata})
+        return {"message": "Memory updated successfully!"}
 
     def get_all(self, **kwargs):
         if self._fail:
@@ -350,3 +381,269 @@ def test_list_and_delete_when_disabled_still_work(tmp_store, admin_user):
         long_memory._cache = original
         store.update_memory_settings(user_id, enabled=True)
     assert fake.deletes == ["m1"]
+
+
+# ---------------------------------------------------------------------------
+# 自动整理: 写入打标签 / 召回重排与命中反馈 / 学生画像 / 夜间整理
+# ---------------------------------------------------------------------------
+
+def test_remember_enriches_new_facts(tmp_store, admin_user):
+    """remember 后对新事实做一次 LLM 标注, category/importance 写回 payload。"""
+    add_result = {"results": [{"id": "m1", "memory": "学生喜欢天文", "event": "ADD"}]}
+    llm = ['参考 {"items": [{"index": 0, "category": "学习偏好", "importance": 5}]} 完']
+    fake = _FakeMemory(add_result=add_result, llm_responses=llm)
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    user_id = _configure_models(admin_user)
+    try:
+        asyncio.run(long_memory.remember(user_id, "我喜欢天文", "好的"))
+    finally:
+        long_memory._cache = original
+    assert fake.updates == [
+        {"id": "m1", "text": None, "metadata": {"category": "学习偏好", "importance": 5}}
+    ]
+    # 两次 LLM 调用: mem0 抽取 + 标注 (抽取在 mem0 内部, 这里只见标注一次)
+    assert len(fake.llm.calls) == 1
+
+
+def test_remember_enrich_garbage_llm_uses_defaults(tmp_store, admin_user):
+    """标注 LLM 输出乱码时用默认标签兜底, 不影响记忆本体。"""
+    add_result = {"results": [{"id": "m1", "memory": "学生喜欢天文", "event": "ADD"}]}
+    fake = _FakeMemory(add_result=add_result, llm_responses=["我不会输出 JSON"])
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    user_id = _configure_models(admin_user)
+    try:
+        asyncio.run(long_memory.remember(user_id, "goal", "reply"))
+    finally:
+        long_memory._cache = original
+    assert fake.updates == [
+        {
+            "id": "m1",
+            "text": None,
+            "metadata": {"category": "其他", "importance": long_memory.DEFAULT_IMPORTANCE},
+        }
+    ]
+
+
+def test_recall_reranks_and_touches(tmp_store, admin_user):
+    """重排: 重要性/衰减参与排序; 被标记过时的条目不召回不触碰; 命中写访问反馈。"""
+    recent = datetime.now(timezone.utc).isoformat()
+    fake = _FakeMemory(
+        results=[
+            {
+                "id": "weak-new",
+                "memory": "新但无关紧要",
+                "score": 0.80,
+                "created_at": recent,
+                "metadata": {"importance": 1},
+            },
+            {
+                "id": "strong-old",
+                "memory": "旧但重要",
+                "score": 0.76,
+                "created_at": "2020-01-01T00:00:00Z",
+                "metadata": {"importance": 5},
+            },
+            {
+                "id": "dead",
+                "memory": "已被新事实取代",
+                "score": 0.99,
+                "created_at": recent,
+                "metadata": {"superseded": True},
+            },
+        ]
+    )
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    user_id = _configure_models(admin_user)
+    try:
+        out = asyncio.run(long_memory.recall(user_id, "还记得我吗"))
+    finally:
+        long_memory._cache = original
+    assert out.splitlines() == ["• 旧但重要", "• 新但无关紧要"]
+    assert {u["id"] for u in fake.updates} == {"strong-old", "weak-new"}
+    for u in fake.updates:
+        assert u["metadata"]["access_count"] == 1
+        assert u["metadata"]["last_accessed_at"]
+
+
+def test_recall_injects_profile_before_facts(tmp_store, admin_user):
+    user_id = _configure_models(admin_user)
+    store.save_memory_profile(user_id, "学生喜欢天文，初一年级。")
+    fake = _FakeMemory()
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    try:
+        out = asyncio.run(long_memory.recall(user_id, "我上次学到哪了"))
+    finally:
+        long_memory._cache = original
+    assert out == "【学生画像】学生喜欢天文，初一年级。\n• 学生喜欢天文"
+
+
+def test_refresh_profile_builds_and_saves(tmp_store, admin_user):
+    user_id = _configure_models(admin_user)
+    fake = _FakeMemory(
+        get_all_results=[
+            {"id": "m1", "memory": "学生喜欢天文", "created_at": "2026-09-01T00:00:00Z", "metadata": {}}
+        ],
+        llm_responses=["学生喜欢天文；对宇宙感兴趣。"],
+    )
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    try:
+        out = asyncio.run(long_memory.refresh_profile(user_id))
+    finally:
+        long_memory._cache = original
+    assert out == "学生喜欢天文；对宇宙感兴趣。"
+    assert store.get_memory_profile(user_id) == "学生喜欢天文；对宇宙感兴趣。"
+
+
+def test_refresh_profile_clears_when_no_memories(tmp_store, admin_user):
+    user_id = _configure_models(admin_user)
+    fake = _FakeMemory(get_all_results=[], llm_responses=["不应该被调用"])
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    try:
+        assert asyncio.run(long_memory.refresh_profile(user_id)) == ""
+    finally:
+        long_memory._cache = original
+    assert store.get_memory_profile(user_id) == ""
+    assert fake.llm.calls == []  # 没有事实就不该调用 LLM
+
+
+def test_consolidate_user_applies_ops_and_refreshes_profile(tmp_store, admin_user):
+    user_id = _configure_models(admin_user)
+    fake = _FakeMemory(
+        get_all_results=[
+            {"id": "m1", "memory": "学生喜欢天文", "created_at": "2026-09-01T00:00:00Z",
+             "metadata": {"importance": 3, "category": "学习偏好"}},
+            {"id": "m2", "memory": "学生对天文感兴趣", "created_at": "2026-09-02T00:00:00Z",
+             "metadata": {"importance": 3, "category": "学习偏好"}},
+            {"id": "m3", "memory": "学生不喜欢语文", "created_at": "2026-09-03T00:00:00Z",
+             "metadata": {"importance": 2, "category": "学习偏好"}},
+        ],
+        llm_responses=[
+            '{"merges": [{"keep_id": 0, "drop_ids": [1], "text": "学生喜欢天文学"}], '
+            '"supersede": [{"id": 2, "reason": "较新事实矛盾"}]}',
+            '{"items": [{"index": 0, "category": "学习偏好", "importance": 4}]}',
+            "学生喜欢天文学；暂时不喜欢语文。",
+        ],
+    )
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    try:
+        stats = asyncio.run(long_memory.consolidate_user(user_id))
+    finally:
+        long_memory._cache = original
+    assert stats == {"merged": 1, "superseded": 1, "profile": True}
+    assert fake.deletes == ["m2"]
+    # m1 有两次 update: 先合并改写正文, 再合并后重新标注
+    text_update = next(u for u in fake.updates if u["id"] == "m1" and u["text"])
+    assert text_update["text"] == "学生喜欢天文学"
+    label_update = next(
+        u
+        for u in fake.updates
+        if u["id"] == "m1" and u["metadata"] and u["metadata"].get("importance") == 4
+    )
+    assert label_update["metadata"]["category"] == "学习偏好"
+    superseded_update = next(u for u in fake.updates if u["id"] == "m3")
+    assert superseded_update["metadata"]["superseded"] is True  # 过时标记
+    assert store.get_memory_profile(user_id) == "学生喜欢天文学；暂时不喜欢语文。"
+
+
+def test_consolidate_user_validates_ids(tmp_store, admin_user):
+    """LLM 幻觉出的编号必须被丢弃, 不能碰别人的/不存在的记忆。"""
+    user_id = _configure_models(admin_user)
+    fake = _FakeMemory(
+        get_all_results=[
+            {"id": "m1", "memory": "学生喜欢天文", "created_at": "2026-09-01T00:00:00Z", "metadata": {}},
+            {"id": "m2", "memory": "学生初二", "created_at": "2026-09-02T00:00:00Z", "metadata": {}},
+        ],
+        llm_responses=[
+            '{"merges": [{"keep_id": 99, "drop_ids": [1], "text": "x"}], '
+            '"supersede": [{"id": 77, "reason": "y"}]}',
+            "画像。",
+        ],
+    )
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    try:
+        stats = asyncio.run(long_memory.consolidate_user(user_id))
+    finally:
+        long_memory._cache = original
+    assert stats["merged"] == 0 and stats["superseded"] == 0
+    assert fake.deletes == []
+    assert all(u["id"] in ("m1", "m2") for u in fake.updates)
+
+
+def test_consolidate_user_skips_llm_with_single_fact(tmp_store, admin_user):
+    user_id = _configure_models(admin_user)
+    fake = _FakeMemory(
+        get_all_results=[
+            {"id": "m1", "memory": "学生喜欢天文", "created_at": "2026-09-01T00:00:00Z", "metadata": {}}
+        ],
+        llm_responses=["学生喜欢天文。"],
+    )
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    try:
+        stats = asyncio.run(long_memory.consolidate_user(user_id))
+    finally:
+        long_memory._cache = original
+    assert stats["merged"] == 0 and stats["superseded"] == 0 and stats["profile"] is True
+    assert len(fake.llm.calls) == 1  # 只有画像一次, 整理没跑
+
+
+def test_housekeeping_store_roundtrip(tmp_store, admin_user):
+    """水位表: 没跑过的用户被选中, 跑过的不重复; 画像读写往返。"""
+    user_id = str(admin_user["id"])
+    # 还没用过记忆的用户不该被选中 (避免为沉默账号白建实例)
+    assert store.stale_housekeeping_users() == []
+    store.record_token_usage(user_id, "memory", total_tokens=1)
+    assert store.stale_housekeeping_users() == [user_id]
+    store.touch_housekeeping(user_id)
+    assert store.stale_housekeeping_users() == []
+    assert store.get_memory_profile(user_id) == ""
+    store.save_memory_profile(user_id, "画像内容")
+    assert store.get_memory_profile(user_id) == "画像内容"
+
+
+def test_housekeeping_loop_processes_pending_users(tmp_store, admin_user, monkeypatch):
+    """循环任务: 只处理水位落后且用过记忆的用户, 整理与画像真实生效。"""
+    monkeypatch.setattr(long_memory, "HOUSEKEEPING_START_DELAY_SECONDS", 0)
+    monkeypatch.setattr(long_memory, "HOUSEKEEPING_INTERVAL_HOURS", 10**6)
+    user_id = _configure_models(admin_user)
+    store.record_token_usage(user_id, "memory", total_tokens=1)
+    fake = _FakeMemory(
+        get_all_results=[
+            {"id": "m1", "memory": "学生喜欢天文", "created_at": "2026-09-01T00:00:00Z", "metadata": {}},
+            {"id": "m2", "memory": "学生对天文感兴趣", "created_at": "2026-09-02T00:00:00Z", "metadata": {}},
+        ],
+        llm_responses=[
+            '{"merges": [{"keep_id": 0, "drop_ids": [1], "text": "学生喜欢天文学"}], "supersede": []}',
+            '{"items": [{"index": 0, "category": "学习偏好", "importance": 4}]}',
+            "学生喜欢天文学。",
+        ],
+    )
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+
+    async def _run():
+        task = asyncio.create_task(long_memory.housekeeping_loop())
+        await asyncio.sleep(0.3)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    try:
+        asyncio.run(_run())
+    finally:
+        long_memory._cache = original
+    assert fake.deletes == ["m2"]
+    assert store.get_memory_profile(user_id) == "学生喜欢天文学。"
+    assert store.stale_housekeeping_users() == []  # 水位已推进
+
+

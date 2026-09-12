@@ -29,6 +29,7 @@ from typing import Callable
 from psycopg import errors as psycopg_errors
 from psycopg.types.json import Jsonb
 
+from .config import settings
 from .db import db_conn
 from .schemas import (
     Assessment,
@@ -700,6 +701,60 @@ def is_memory_enabled(user_id: str) -> bool:
         return bool(get_memory_settings_row(user_id)["enabled"])
     except Exception:
         return True
+
+
+def get_memory_profile(user_id: str) -> str:
+    """学生画像摘要（召回时注入）；没有画像返回空串。"""
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT profile FROM user_memory_profile WHERE user_id = %s", (user_id,)
+        ).fetchone()
+    return (row["profile"] or "").strip() if row else ""
+
+
+def save_memory_profile(user_id: str, profile: str) -> None:
+    """写入/更新学生画像（夜间整理与画像重建共用）。"""
+    with db_conn() as conn:
+        conn.execute(
+            """INSERT INTO user_memory_profile (user_id, profile) VALUES (%s, %s)
+               ON CONFLICT (user_id)
+               DO UPDATE SET profile = EXCLUDED.profile, updated_at = now()""",
+            (user_id, (profile or "").strip()),
+        )
+
+
+def stale_housekeeping_users(limit: int = 50) -> list[str]:
+    """最久没被夜间整理任务处理过的用户（含从未处理过的）。
+
+    只挑「记忆开着 + 真的用过记忆（有 memory 用量记录）」的用户，
+    避免每轮为从不使用记忆的账号构建 mem0 实例。
+    """
+    with db_conn() as conn:
+        rows = conn.execute(
+            """SELECT u.id::text AS id
+               FROM users u
+               LEFT JOIN memory_housekeeping h ON h.user_id = u.id
+               WHERE (h.user_id IS NULL OR h.last_run_at < now() - make_interval(hours => %s))
+                 AND COALESCE((SELECT s.enabled FROM user_memory_settings s
+                               WHERE s.user_id = u.id), TRUE)
+                 AND EXISTS (SELECT 1 FROM token_usage t
+                             WHERE t.user_id = u.id AND t.gen_type = 'memory')
+               ORDER BY h.last_run_at NULLS FIRST
+               LIMIT %s""",
+            (settings.memory_housekeeping_interval_hours, limit),
+        ).fetchall()
+    return [r["id"] for r in rows]
+
+
+def touch_housekeeping(user_id: str) -> None:
+    """推进该用户的整理水位（无论本轮成败都调用，避免坏用户被热循环重试）。"""
+    with db_conn() as conn:
+        conn.execute(
+            """INSERT INTO memory_housekeeping (user_id) VALUES (%s)
+               ON CONFLICT (user_id)
+               DO UPDATE SET last_run_at = now(), updated_at = now()""",
+            (user_id,),
+        )
 
 
 # ---------------------------------------------------------------------------

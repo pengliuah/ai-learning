@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     # LLM 单次调用超时秒数: 上游挂起时避免 SSE 永久等待
     llm_request_timeout: int = 180
 
+    # 长期记忆夜间整理: 合并重复/标记过时/刷新学生画像。
+    # 关闭用 MEMORY_HOUSEKEEPING=false; 间隔小时数可用环境变量覆盖。
+    memory_housekeeping: bool = True
+    memory_housekeeping_interval_hours: int = 6
+
     # Auth: JWT secret for access tokens. When unset, a random secret is
     # generated at startup -- restarts then invalidate all access tokens
     # (refresh tokens still work), so set JWT_SECRET for stable sessions.

@@ -6,9 +6,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-import asyncio
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,7 +28,7 @@ from .auth import (
     rotate_refresh_token,
     verify_password,
 )
-from .config import BACKEND_DIR
+from .config import BACKEND_DIR, settings
 from .middleware import AccessLogMiddleware
 from .schemas import (
     AdminCreateUserRequest,
@@ -61,7 +62,22 @@ from .schemas import (
     SaveToImaResponse,
 )
 
-app = FastAPI(title="zhixue-backend", version="0.1.0")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """拉起长期记忆的夜间整理循环（MEMORY_HOUSEKEEPING=false 关闭）。"""
+    housekeeping_task = None
+    if settings.memory_housekeeping:
+        housekeeping_task = asyncio.create_task(long_memory.housekeeping_loop())
+    yield
+    if housekeeping_task is not None:
+        housekeeping_task.cancel()
+        try:
+            await housekeeping_task
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(title="zhixue-backend", version="0.1.0", lifespan=_lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

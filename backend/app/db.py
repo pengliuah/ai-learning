@@ -245,6 +245,16 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
                embedding_base_url  TEXT NOT NULL DEFAULT '',
                updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
            )""", "user_model_settings"),
+        ("user_memory_profile", """CREATE TABLE user_memory_profile (
+               user_id    UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+               profile    TEXT NOT NULL DEFAULT '',
+               updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+           )""", "user_memory_profile"),
+        ("memory_housekeeping", """CREATE TABLE memory_housekeeping (
+               user_id     UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+               last_run_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+               updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+           )""", "memory_housekeeping"),
     ):
         if not conn.execute(f"SELECT to_regclass('public.{table}')").fetchone()[0]:
             conn.execute(ddl)

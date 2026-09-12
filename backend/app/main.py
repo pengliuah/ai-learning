@@ -329,6 +329,55 @@ def create_plan(req: PlanCreateRequest, user: dict = Depends(get_current_user)):
     return doc
 
 
+@app.post("/api/plans/stream")
+async def create_plan_stream(req: PlanCreateRequest, user: dict = Depends(get_current_user)):
+    """生成并创建一份学习计划（SSE + 心跳保活）。
+
+    与 ``POST /api/plans`` 相同的生成与入库逻辑，但改为事件流返回：
+    生成是分钟级长任务且期间无数据回传，移动网络/nginx 会掐断"空闲"连接
+    （App/浏览器报超时或失败，而其实后端已生成并入库），因此每 30 秒发一个
+    注释帧 ``: ping`` 保活，完成后发 done 事件携带完整计划文档。
+    客户端中途断开时后端仍会把已生成的计划入库。
+
+    响应: ``text/event-stream``:
+
+        : ping            (每 30s 一次)
+        event: done
+        data: <完整 Document（JSON，含 id/plan/modules）>
+        event: error
+        data: {"detail": "<错误信息>"}
+
+    错误:
+        - 503: 未在「模型设置」配置模型 API Key（流开始前）。
+        - 流中 error 事件: LLM 或结构化输出失败（已内置一次重试）。
+    """
+    uid = str(user["id"])
+    _require_configured(uid)
+    logger.info("create_plan_stream: user=%s input=%s mode=%s", user["username"], req.input[:100], req.mode)
+
+    def work():
+        plan = coach.make_plan(PlanSource(input=req.input, mode=req.mode), uid)
+        logger.info("create_plan_stream: ok title=%s modules=%d", plan.title, len(plan.modules))
+        return store.create_document(PlanSource(input=req.input, mode=req.mode), plan, uid)
+
+    async def event_stream():
+        # LLM 调用放线程池; 每 30s 无结果就发心跳注释帧, 避免连接被中间层掐断
+        task = asyncio.create_task(asyncio.to_thread(work))
+        try:
+            while True:
+                try:
+                    doc = await asyncio.wait_for(asyncio.shield(task), timeout=LLM_HEARTBEAT_SECONDS)
+                    yield _sse("done", doc.model_dump(mode="json"))
+                    return
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        except Exception as exc:
+            logger.error("create_plan_stream: failed: %s", exc)
+            yield _sse("error", {"detail": _friendly_llm_error(exc)})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 @app.get("/api/plans")
 def list_plans(q: str | None = None, user: dict = Depends(get_current_user)):
     """列出计划（概要视图），可按标题关键词过滤。

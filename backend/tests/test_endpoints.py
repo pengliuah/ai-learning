@@ -58,6 +58,23 @@ def test_create_plan(client, fake_coach):
     assert client.get(f"/api/plans/{doc['id']}").status_code == 200
 
 
+def test_create_plan_stream(client, fake_coach):
+    """SSE 版计划创建: done 事件携带完整 Document 且已入库。"""
+    fake_coach.plan = make_plan(modules=2)
+    r = client.post("/api/plans/stream", json={"input": "a topic", "mode": "topic"})
+    doc = _sse_done(r)
+    assert doc["id"]
+    assert doc["plan"]["title"] == "test-plan"
+    assert len(doc["plan"]["modules"]) == 2
+    assert client.get(f"/api/plans/{doc['id']}").status_code == 200
+
+
+def test_create_plan_stream_unconfigured(unconfigured_client):
+    """未配置模型时流开始前就 503, 不产生事件流。"""
+    r = unconfigured_client.post("/api/plans/stream", json={"input": "t", "mode": "topic"})
+    assert r.status_code == 503
+
+
 def test_create_plan_unconfigured_503(unconfigured_client):
     r = unconfigured_client.post("/api/plans", json={"input": "x", "mode": "topic"})
     assert r.status_code == 503

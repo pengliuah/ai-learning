@@ -115,10 +115,19 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-/** SSE 长任务 (测验生成/批改): 后端生成期间每 30s 发 ": ping" 注释帧保活,
- *  注释帧被解析器自然忽略; done 事件返回最终数据, error 事件抛出。 */
-async function sseTask<T>(url: string): Promise<T> {
-  const doFetch = () => fetch(`${API_BASE}${url}`, { method: "POST", headers: authHeaders() });
+/** SSE 长任务 (测验生成/批改/计划创建): 后端生成期间每 30s 发 ": ping" 注释帧
+ *  保活, 注释帧被解析器自然忽略; done 事件返回最终数据, error 事件抛出。
+ *  init 可携带 body 等请求参数 (与 auth 头合并)。 */
+async function sseTask<T>(url: string, init?: RequestInit): Promise<T> {
+  const doFetch = () =>
+    fetch(`${API_BASE}${url}`, {
+      method: "POST",
+      ...init,
+      headers: {
+        ...(init?.headers as Record<string, string> | undefined),
+        ...authHeaders(),
+      },
+    });
   let res = await doFetch();
   if (res.status === 401) {
     if (await tryRefresh()) res = await doFetch();
@@ -241,8 +250,10 @@ export const api = {
 
   getPlan: (id: string) => json<Document>(`/plans/${id}`),
 
+  // 计划创建是分钟级长任务: 走 SSE + 心跳保活, 否则移动网络会掐断空闲连接
+  // 报超时/失败 (而后端其实已生成入库)。
   createPlan: (input: string, mode: "topic" | "materials") =>
-    json<Document>("/plans", {
+    sseTask<Document>("/plans/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ input, mode }),

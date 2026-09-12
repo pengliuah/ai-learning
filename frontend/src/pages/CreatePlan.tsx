@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useCreatePlan } from "../hooks/usePlans";
@@ -9,6 +9,17 @@ export function CreatePlan() {
   const createPlan = useCreatePlan();
   const [mode, setMode] = useState<"topic" | "materials">("topic");
   const [input, setInput] = useState(() => searchParams.get("topic") ?? "");
+  const [elapsed, setElapsed] = useState(0);
+
+  // 生成通常需要 1-3 分钟: 显示等待时长, 避免用户以为卡死而退出
+  useEffect(() => {
+    if (!createPlan.isPending) {
+      setElapsed(0);
+      return;
+    }
+    const timer = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(timer);
+  }, [createPlan.isPending]);
 
   const handleSubmit = () => {
     if (!input.trim()) return;
@@ -68,6 +79,12 @@ export function CreatePlan() {
       {createPlan.isError && (
         <p className="mb-4 text-sm text-red-600 dark:text-red-400">
           生成失败：{(createPlan.error as Error).message}
+        </p>
+      )}
+
+      {createPlan.isPending && elapsed > 20 && (
+        <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+          已等待 {elapsed} 秒 —— 生成一份多模块计划通常需要 1-3 分钟，请保持页面打开。
         </p>
       )}
 

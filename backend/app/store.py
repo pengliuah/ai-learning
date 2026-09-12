@@ -30,6 +30,7 @@ from psycopg import errors as psycopg_errors
 from psycopg.types.json import Jsonb
 
 from .config import settings
+from .crypto import decrypt_field, encrypt_field
 from .db import db_conn
 from .schemas import (
     Assessment,
@@ -273,16 +274,6 @@ def _sync_module(conn, plan_id: str, module: Module) -> None:
 # Public store API (same interface as the former JSON store)
 # ---------------------------------------------------------------------------
 
-def list_documents(user_id: str) -> list[Document]:
-    with db_conn() as conn:
-        ids = [r["id"] for r in conn.execute(
-            "SELECT id FROM plans WHERE user_id = %s ORDER BY sort_order, created_at",
-            (user_id,)).fetchall()]
-        docs = [_load_document(conn, str(pid), user_id) for pid in ids]
-    logger.debug("list_documents: user=%s count=%d", user_id, len(docs))
-    return docs
-
-
 def list_items(user_id: str, q: str | None = None) -> list[PlanListItem]:
     """List the user's plan summaries, optionally filtered by a
     case-insensitive title substring. An empty/whitespace ``q`` (or None)
@@ -428,7 +419,10 @@ def reorder_plans(plan_ids: list[str], user_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 def get_ima_settings_row(user_id: str) -> dict:
-    """Return the user's ima settings row, creating defaults if missing."""
+    """Return the user's ima settings row, creating defaults if missing.
+
+    ima_api_key 出库时解密（历史明文原样透传，下次保存即完成加密迁移）。
+    """
     with db_conn() as conn:
         row = conn.execute(
             "SELECT * FROM user_ima_settings WHERE user_id = %s", (user_id,)
@@ -440,7 +434,9 @@ def get_ima_settings_row(user_id: str) -> dict:
             row = conn.execute(
                 "SELECT * FROM user_ima_settings WHERE user_id = %s", (user_id,)
             ).fetchone()
-    return dict(row)
+    out = dict(row)
+    out["ima_api_key"] = decrypt_field(out.get("ima_api_key") or "")
+    return out
 
 
 def update_ima_settings(
@@ -457,7 +453,7 @@ def update_ima_settings(
         params.append(client_id)
     if api_key is not None:
         sets.append("ima_api_key = %s")
-        params.append(api_key)
+        params.append(encrypt_field(api_key))
     if skill_prompt is not None:
         sets.append("ima_skill_prompt = %s")
         params.append(skill_prompt)
@@ -473,10 +469,7 @@ def update_ima_settings(
                     WHERE user_id = %s""",
                 params,
             )
-        row = conn.execute(
-            "SELECT * FROM user_ima_settings WHERE user_id = %s", (user_id,)
-        ).fetchone()
-    return dict(row)
+    return get_ima_settings_row(user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -542,7 +535,10 @@ def update_gen_settings(
 # ---------------------------------------------------------------------------
 
 def get_model_settings_row(user_id: str) -> dict:
-    """Return the user's model settings row, creating defaults if missing."""
+    """Return the user's model settings row, creating defaults if missing.
+
+    API Key 字段出库时解密（历史上是明文的行原样透传，下次保存即完成加密迁移）。
+    """
     with db_conn() as conn:
         row = conn.execute(
             "SELECT * FROM user_model_settings WHERE user_id = %s", (user_id,)
@@ -554,7 +550,10 @@ def get_model_settings_row(user_id: str) -> dict:
             row = conn.execute(
                 "SELECT * FROM user_model_settings WHERE user_id = %s", (user_id,)
             ).fetchone()
-    return dict(row)
+    out = dict(row)
+    out["api_key"] = decrypt_field(out.get("api_key") or "")
+    out["embedding_api_key"] = decrypt_field(out.get("embedding_api_key") or "")
+    return out
 
 
 def update_model_settings(
@@ -572,7 +571,7 @@ def update_model_settings(
     params: list = []
     if api_key is not None:
         sets.append("api_key = %s")
-        params.append(api_key.strip())
+        params.append(encrypt_field(api_key.strip()))
     if model is not None:
         sets.append("model = %s")
         params.append(model.strip())
@@ -584,7 +583,7 @@ def update_model_settings(
         params.append(max_tokens)
     if embedding_api_key is not None:
         sets.append("embedding_api_key = %s")
-        params.append(embedding_api_key.strip())
+        params.append(encrypt_field(embedding_api_key.strip()))
     if embedding_model is not None:
         sets.append("embedding_model = %s")
         params.append(embedding_model.strip())
@@ -603,10 +602,7 @@ def update_model_settings(
                     WHERE user_id = %s""",
                 params,
             )
-        row = conn.execute(
-            "SELECT * FROM user_model_settings WHERE user_id = %s", (user_id,)
-        ).fetchone()
-    return dict(row)
+    return get_model_settings_row(user_id)
 
 
 def get_llm_config(user_id: str) -> tuple[str, str, str, int]:

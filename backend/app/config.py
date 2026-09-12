@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     # generated at startup -- restarts then invalidate all access tokens
     # (refresh tokens still work), so set JWT_SECRET for stable sessions.
     jwt_secret: str = ""
+    # 敏感字段(用户 API Key)静态加密密钥; 未设置时回退 jwt_secret。
+    field_secret: str = ""
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 14
     # Bootstrap admin, created only when the users table is empty.

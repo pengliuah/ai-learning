@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir \
     "langchain-openai>=0.3" "langchain-core>=0.3" "langgraph>=0.2" \
     "deepagents>=0.5" "pydantic>=2.9" "pydantic-settings>=2.5" \
     "python-dotenv>=1.0" "psycopg[binary,pool]>=3.2" \
-    "bcrypt>=4.0" "pyjwt>=2.8" \
+    "bcrypt>=4.0" "pyjwt>=2.8" "cryptography>=42.0" \
     "mem0ai==2.0.20"
 
 # Copy backend source

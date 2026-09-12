@@ -32,8 +32,8 @@ def test_get_unknown_returns_none(tmp_store, owner):
     assert store.get_document("does-not-exist", owner) is None
 
 
-def test_list_documents_empty(tmp_store, owner):
-    assert store.list_documents(owner) == []
+def test_list_items_empty(tmp_store, owner):
+    assert store.list_items(owner) == []
 
 
 def test_list_items_progress(tmp_store, owner):
@@ -80,9 +80,10 @@ def test_update_module_missing_raises(tmp_store, owner):
 
 def test_persistence_round_trip(tmp_store, owner):
     doc = store.create_document(PlanSource(input="x", mode="topic"), make_plan(modules=1), owner)
-    docs = store.list_documents(owner)
-    assert len(docs) == 1
-    assert docs[0].id == doc.id
+    items = store.list_items(owner)
+    assert len(items) == 1
+    assert items[0].id == doc.id
+    assert store.get_document(doc.id, owner) is not None
 
 def test_list_items_filter_by_title(tmp_store, owner):
     store.create_document(PlanSource(input="x", mode="topic"), make_plan(title="Python 装饰器基础"), owner)
@@ -106,7 +107,6 @@ def test_isolation_between_users(tmp_store, admin_user, normal_user):
     doc = store.create_document(PlanSource(input="x", mode="topic"), make_plan(), admin_id)
 
     assert store.get_document(doc.id, user_id) is None
-    assert store.list_documents(user_id) == []
     assert store.list_items(user_id) == []
     assert store.delete_document(doc.id, user_id) is False
     # owner still sees it

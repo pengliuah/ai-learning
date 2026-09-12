@@ -836,6 +836,8 @@ async def housekeeping_loop() -> None:
     await asyncio.sleep(HOUSEKEEPING_START_DELAY_SECONDS)
     while True:
         try:
+            # 顺手清理过期/已吊销的 refresh token (原本无人调用, 表只进不出)
+            await asyncio.to_thread(store.delete_expired_refresh_tokens)
             users = await asyncio.to_thread(
                 store.stale_housekeeping_users, HOUSEKEEPING_MAX_USERS
             )

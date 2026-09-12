@@ -18,6 +18,7 @@ interface ToolEvent {
   name: string;
   phase: "start" | "end";
   data?: { topic?: string } | PlanListItem[];
+  note?: string;
 }
 
 interface Message {
@@ -41,6 +42,34 @@ function storageKey(userId: string | undefined) {
 
 function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+/** 同一条回复里模型可能换关键词连续调用 search_plans，每次都渲染一张卡会堆满屏幕。
+ *  收敛成一张：保留最后一次的结果，被合并的次数放进提示文案。 */
+function coalesceSearchTools(tools: ToolEvent[]): ToolEvent[] {
+  const ends = tools
+    .map((t, i) => ({ t, i }))
+    .filter(({ t }) => t.name === "search_plans" && t.phase === "end");
+  if (ends.length <= 1) return tools;
+  const last = ends[ends.length - 1];
+  const dropped = ends.slice(0, -1);
+  const droppedEmpty = dropped.filter(
+    ({ t }) => !Array.isArray(t.data) || t.data.length === 0,
+  ).length;
+  const kept: ToolEvent = {
+    ...last.t,
+    note:
+      Array.isArray(last.t.data) && last.t.data.length > 0
+        ? `已合并此前 ${dropped.length} 次未命中的检索`
+        : droppedEmpty > 0
+          ? `共检索 ${ends.length} 次，均未找到相关的学习计划`
+          : undefined,
+  };
+  const merged = new Map<number, ToolEvent>();
+  tools.forEach((t, i) => merged.set(i, t));
+  merged.set(last.i, kept);
+  dropped.forEach(({ i }) => merged.delete(i));
+  return [...merged.values()];
 }
 
 function ToolCard({ tool, navigate }: { tool: ToolEvent; navigate: ReturnType<typeof useNavigate> }) {
@@ -75,7 +104,7 @@ function ToolCard({ tool, navigate }: { tool: ToolEvent; navigate: ReturnType<ty
       return (
         <div className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300">
           <Search className="h-4 w-4 shrink-0" />
-          没有找到相关的学习计划
+          {tool.note || "没有找到相关的学习计划"}
         </div>
       );
     }
@@ -84,6 +113,7 @@ function ToolCard({ tool, navigate }: { tool: ToolEvent; navigate: ReturnType<ty
         <div className="flex items-center gap-1.5 px-1 pb-1.5 text-xs text-gray-500 dark:text-gray-400">
           <Search className="h-3.5 w-3.5" />
           找到 {results.length} 个计划
+          {tool.note && <span className="ml-1">（{tool.note}）</span>}
         </div>
         <div className="space-y-1">
           {results.map((p) => (
@@ -335,7 +365,7 @@ export function Coach() {
 
                 {m.tools && m.tools.length > 0 && (
                   <div className="mt-2 space-y-2">
-                    {m.tools.map((t, i) => (
+                    {coalesceSearchTools(m.tools).map((t, i) => (
                       <ToolCard key={i} tool={t} navigate={navigate} />
                     ))}
                   </div>

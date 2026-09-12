@@ -2,13 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import earthMapUrl from "../assets/planets/earth_atmos_2048.jpg";
 import earthSpecularUrl from "../assets/planets/earth_specular_2048.jpg";
+import earthLightsUrl from "../assets/planets/earth_lights_2048.png";
 import cloudsMapUrl from "../assets/planets/earth_clouds_1024.png";
 import moonMapUrl from "../assets/planets/moon_1024.jpg";
 
+/** 太阳方向（世界系，归一化）：决定地球昼夜分界与光源位置 */
+const SUN_DIR = new THREE.Vector3(-4, 2.5, 9).normalize();
+
 /**
  * 登录页 3D 太空场景（three.js）：
- * 真实贴图的地球（自转 + 云层 + 大气辉光）、环绕的月球、远处旋转的粒子银河、
- * 太阳方向光 + 镜头视差。作为透明层叠在 2D 星空之上，失败时静默退回纯星空。
+ * 地球用自定义昼夜着色器——日面真实贴图 + 海面镜面反光，夜面亮起城市灯光，
+ * 晨昏线带一层暖色；云层独立球壳；月球在倾斜轨道上绕飞（始终在画面内）；
+ * 远处是缓慢旋转的粒子银河。作为透明层叠在 2D 星空之上，失败时静默退回纯星空。
  */
 export function SpaceScene({ className }: { className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -155,20 +160,86 @@ export function SpaceScene({ className }: { className?: string }) {
     })();
     scene.add(galaxy);
 
-    // --- 地球组：本体 + 云层 + 大气辉光 + 月球 ---
+    // --- 地球组：昼夜着色器本体 + 云层 + 大气辉光 + 月球 ---
     const earthGroup = new THREE.Group();
     const tiltGroup = new THREE.Group();
     tiltGroup.rotation.z = THREE.MathUtils.degToRad(23.4); // 黄赤交角
     earthGroup.add(tiltGroup);
 
-    const earthMat = new THREE.MeshPhongMaterial({
-      specular: new THREE.Color("#3a4a5a"),
-      shininess: 14,
+    // 1x1 占位贴图：贴图加载完成前渲染第一帧不报错
+    const placeholder = (r: number, g: number, b: number) => {
+      const t = new THREE.DataTexture(new Uint8Array([r, g, b, 255]), 1, 1);
+      t.needsUpdate = true;
+      return t;
+    };
+    const earthUniforms: Record<string, THREE.IUniform> = {
+      dayMap: { value: placeholder(8, 14, 32) },
+      nightMap: { value: placeholder(0, 0, 0) },
+      specMap: { value: placeholder(0, 0, 0) },
+      sunDir: { value: SUN_DIR },
+    };
+    const earthMat = new THREE.ShaderMaterial({
+      uniforms: earthUniforms,
+      vertexShader: `
+        varying vec2 vUv;
+        varying vec3 vNormalW;
+        varying vec3 vPosW;
+        void main() {
+          vUv = uv;
+          vNormalW = normalize(mat3(modelMatrix) * normal);
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vPosW = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D dayMap;
+        uniform sampler2D nightMap;
+        uniform sampler2D specMap;
+        uniform vec3 sunDir;
+        varying vec2 vUv;
+        varying vec3 vNormalW;
+        varying vec3 vPosW;
+        void main() {
+          vec3 N = normalize(vNormalW);
+          vec3 V = normalize(cameraPosition - vPosW);
+          float sunDot = dot(N, sunDir);
+          float dayMix = smoothstep(-0.15, 0.25, sunDot);
+
+          // 日面：贴图 + 漫反射塑形
+          vec3 dayCol = texture2D(dayMap, vUv).rgb;
+          vec3 dayLit = dayCol * (0.35 + 0.9 * max(sunDot, 0.0));
+
+          // 夜面：城市灯光（暖色）+ 一点点月照蓝，避免死黑
+          vec3 nightCol = texture2D(nightMap, vUv).rgb;
+          vec3 nightLit = nightCol * vec3(1.0, 0.85, 0.6) * 2.0;
+          nightLit += dayCol * vec3(0.04, 0.05, 0.09);
+
+          vec3 color = mix(nightLit, dayLit, dayMix);
+
+          // 海面镜面反光（太阳耀斑，高光收紧成一小片）
+          float specMask = texture2D(specMap, vUv).r;
+          vec3 H = normalize(sunDir + V);
+          float spec = pow(max(dot(N, H), 0.0), 64.0) * specMask * dayMix;
+          color += spec * vec3(1.0, 0.85, 0.6) * 0.42;
+
+          // 晨昏线暖色（日出日落带）
+          float twilight = exp(-pow(sunDot / 0.13, 2.0));
+          color += twilight * vec3(0.95, 0.4, 0.12) * 0.22;
+
+          // 边缘大气蓝（日面一侧更亮）
+          float fres = pow(1.0 - max(dot(N, V), 0.0), 2.6);
+          color += fres * vec3(0.25, 0.5, 1.0) * (0.3 + 0.45 * dayMix);
+
+          gl_FragColor = vec4(color, 1.0);
+          #include <colorspace_fragment>
+        }
+      `,
     });
     const earth = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64), earthMat);
     tiltGroup.add(earth);
 
-    const cloudsMat = new THREE.MeshLambertMaterial({ transparent: true, opacity: 0.75, depthWrite: false });
+    const cloudsMat = new THREE.MeshLambertMaterial({ transparent: true, opacity: 0.8, depthWrite: false });
     const clouds = new THREE.Mesh(new THREE.SphereGeometry(1.015, 96, 64), cloudsMat);
     tiltGroup.add(clouds);
 
@@ -186,7 +257,7 @@ export function SpaceScene({ className }: { className?: string }) {
         fragmentShader: `
           varying vec3 vN;
           void main() {
-            float i = pow(0.68 - dot(vN, vec3(0.0, 0.0, 1.0)), 3.0) * 0.75;
+            float i = pow(0.68 - dot(vN, vec3(0.0, 0.0, 1.0)), 3.0) * 0.65;
             gl_FragColor = vec4(0.3, 0.55, 1.0, 1.0) * i;
           }
         `,
@@ -196,11 +267,11 @@ export function SpaceScene({ className }: { className?: string }) {
         depthWrite: false,
       }),
     );
-    atmosphere.scale.setScalar(1.22);
+    atmosphere.scale.setScalar(1.18);
     earthGroup.add(atmosphere);
 
-    const moonMat = new THREE.MeshPhongMaterial({ shininess: 5 });
-    const moon = new THREE.Mesh(new THREE.SphereGeometry(0.27, 48, 32), moonMat);
+    const moonMat = new THREE.MeshPhongMaterial({ shininess: 4 });
+    const moon = new THREE.Mesh(new THREE.SphereGeometry(0.29, 48, 32), moonMat);
     earthGroup.add(moon);
     scene.add(earthGroup);
 
@@ -215,13 +286,12 @@ export function SpaceScene({ className }: { className?: string }) {
         blending: THREE.AdditiveBlending,
       }),
     );
-    sun.position.set(-17, 8.5, -10);
-    sun.scale.setScalar(9);
+    sun.scale.setScalar(10);
     scene.add(sun);
 
-    // --- 光照 ---
+    // --- 光照（云层/月球用内置光照，地球走自定义着色器） ---
     const sunLight = new THREE.DirectionalLight(0xfff1dd, 2.0);
-    sunLight.position.set(-5, 3, 10);
+    sunLight.position.copy(SUN_DIR).multiplyScalar(10);
     scene.add(sunLight);
     scene.add(new THREE.AmbientLight(0x445577, 0.7));
     const fill = new THREE.DirectionalLight(0x8899ff, 0.3);
@@ -231,22 +301,32 @@ export function SpaceScene({ className }: { className?: string }) {
     // --- 尺寸与布局（横屏地球偏左下，竖屏居中偏下，避开登录卡片） ---
     let w = 1;
     let h = 1;
+    // 月球轨道：横向振幅按画面宽窄调整保证不出画；竖屏把轨道抬高到卡片上方的天空里
+    let moonOrbitX = 1.3;
+    let moonOrbitAmpY = 0.8;
+    let moonOrbitOffY = 0.35;
     const applyLayout = () => {
       const aspect = w / h;
       if (aspect >= 1) {
-        earthGroup.position.set(-3.9, -2.9, 0);
-        earthGroup.scale.setScalar(2.9);
+        earthGroup.position.set(-3.6, -2.7, 0);
+        earthGroup.scale.setScalar(3.2);
         galaxy.position.set(3.6, 2.2, -42);
         galaxy.scale.setScalar(1.7);
         galaxy.rotation.set(-1.05, 0, 0.35);
-        sun.position.set(-17, 8.5, -10);
+        sun.position.set(-14, 7.5, -9);
+        moonOrbitX = 1.3;
+        moonOrbitAmpY = 0.8;
+        moonOrbitOffY = 0.35;
       } else {
-        earthGroup.position.set(0.2, -5.6, 0);
-        earthGroup.scale.setScalar(3.7);
+        earthGroup.position.set(0.2, -5.2, 0);
+        earthGroup.scale.setScalar(3.3);
         galaxy.position.set(0.5, 3.6, -46);
         galaxy.scale.setScalar(1.45);
         galaxy.rotation.set(-1.15, 0, 0.2);
-        sun.position.set(-13, 9, -12);
+        sun.position.set(-11, 8.5, -11);
+        moonOrbitX = 0.85;
+        moonOrbitAmpY = 1.0;
+        moonOrbitOffY = 1.35;
       }
     };
     const resize = () => {
@@ -271,7 +351,7 @@ export function SpaceScene({ className }: { className?: string }) {
     window.addEventListener("pointermove", onPointerMove, { passive: true });
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    let moonAngle = Math.PI * 0.35;
+    let moonAngle = 0.9; // 初始停在地球右上方（朝画面中心一侧）
     let raf = 0;
     const clock = new THREE.Clock();
 
@@ -279,14 +359,14 @@ export function SpaceScene({ className }: { className?: string }) {
       const t = clock.elapsedTime;
       earth.rotation.y += dt * 0.032;
       clouds.rotation.y += dt * 0.041;
-      moonAngle += dt * 0.05;
-      // 轨道面前倾：经过地球前方时从上方掠过，不遮挡地球正面
+      moonAngle += dt * 0.045;
+      // 倾斜轨道：经过地球前方时从上方掠过，z 给出前后纵深
       moon.position.set(
-        Math.cos(moonAngle) * 2.05,
-        Math.sin(moonAngle) * 0.85 + 0.3,
-        Math.sin(moonAngle) * 1.3,
+        Math.cos(moonAngle) * moonOrbitX,
+        Math.sin(moonAngle) * moonOrbitAmpY + moonOrbitOffY,
+        Math.sin(moonAngle) * 1.35,
       );
-      moon.rotation.y += dt * 0.05;
+      moon.rotation.y = -moonAngle; // 潮汐锁定：始终同一面朝向地球
       stars.rotation.y += dt * 0.004;
       galaxy.rotation.z += dt * 0.02;
 
@@ -316,17 +396,25 @@ export function SpaceScene({ className }: { className?: string }) {
     Promise.all([
       loadTexture(earthMapUrl, true),
       loadTexture(earthSpecularUrl, false),
+      loadTexture(earthLightsUrl, false),
       loadTexture(cloudsMapUrl, true),
       loadTexture(moonMapUrl, true),
-    ]).then(([earthMap, specMap, cloudsMap, moonMap]) => {
+    ]).then(([earthMap, specMap, lightsMap, cloudsMap, moonMap]) => {
       if (cancelled) return;
-      if (earthMap) earthMat.map = earthMap;
-      if (specMap) earthMat.specularMap = specMap;
-      earthMat.needsUpdate = true;
-      if (cloudsMap) cloudsMat.map = cloudsMap;
-      cloudsMat.needsUpdate = true;
-      if (moonMap) moonMat.map = moonMap;
-      moonMat.needsUpdate = true;
+      if (earthMap) earthUniforms.dayMap.value = earthMap;
+      if (specMap) earthUniforms.specMap.value = specMap;
+      if (lightsMap) earthUniforms.nightMap.value = lightsMap;
+      if (cloudsMap) {
+        cloudsMat.map = cloudsMap;
+        cloudsMat.needsUpdate = true;
+      }
+      if (moonMap) {
+        moonMat.map = moonMap;
+        // 月面凹凸感：直接用亮度图当 bump
+        moonMat.bumpMap = moonMap;
+        moonMat.bumpScale = 0.6;
+        moonMat.needsUpdate = true;
+      }
       resize();
       if (reducedMotion) {
         renderFrame(0);

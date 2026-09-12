@@ -53,7 +53,7 @@ export function Login() {
             <span className="mx-3 inline-block animate-pulse">🚀</span>
             探索知识星系
           </p>
-          <p className="mt-4 text-sm leading-6 text-white/55">
+          <p className="mt-4 text-sm leading-6 text-white/70 [text-shadow:0_1px_10px_rgba(0,0,0,0.9),0_0_3px_rgba(0,0,0,0.7)]">
             每一个学习目标，都是一颗待点亮的星。
             <br />
             登录智学助手，让 AI 教练陪你规划路径、生成内容、

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app import long_memory, store
+from app import long_memory, memory_client, memory_curation, store
 
 
 class _FakeLLM:
@@ -132,13 +132,13 @@ def _configure_models(admin_user) -> str:
 
 def test_recall_formats_and_scopes(tmp_store, admin_user):
     fake = _FakeMemory()
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     user_id = _configure_models(admin_user)
     try:
         out = asyncio.run(long_memory.recall(user_id, "我上次学到哪了"))
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert out == "• 学生喜欢天文"
     assert fake.searches[0][0] == "我上次学到哪了"
     assert fake.searches[0][1]["filters"] == {"user_id": user_id}
@@ -146,15 +146,15 @@ def test_recall_formats_and_scopes(tmp_store, admin_user):
 
 def test_recall_empty_results_and_errors(tmp_store, admin_user):
     user_id = _configure_models(admin_user)
-    original = long_memory._cache
-    long_memory._cache = _StubCache(_FakeMemory(results=[]))
+    original = memory_client._cache
+    memory_client._cache = _StubCache(_FakeMemory(results=[]))
     try:
         assert asyncio.run(long_memory.recall(user_id, "hi")) == ""
-        long_memory._cache = _StubCache(_FakeMemory(fail=True))
+        memory_client._cache = _StubCache(_FakeMemory(fail=True))
         # 异常吞掉, 返回空串 —— 记忆故障绝不影响对话
         assert asyncio.run(long_memory.recall(user_id, "hi")) == ""
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
 
 
 def test_recall_skipped_without_query_or_user():
@@ -164,13 +164,13 @@ def test_recall_skipped_without_query_or_user():
 
 def test_remember_sends_turn_and_scopes(tmp_store, admin_user):
     fake = _FakeMemory()
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     user_id = _configure_models(admin_user)
     try:
         asyncio.run(long_memory.remember(user_id, "我喜欢天文", "好的，记住啦"))
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert len(fake.adds) == 1
     messages, kwargs = fake.adds[0]
     assert messages == [
@@ -182,8 +182,8 @@ def test_remember_sends_turn_and_scopes(tmp_store, admin_user):
 
 def test_remember_ignores_empty_and_errors(tmp_store, admin_user):
     fake = _FakeMemory(fail=True)
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     user_id = _configure_models(admin_user)
     try:
         # 空内容不写; 失败只吞掉不抛
@@ -192,21 +192,21 @@ def test_remember_ignores_empty_and_errors(tmp_store, admin_user):
         asyncio.run(long_memory.remember(user_id, "goal", "reply"))
         assert fake.adds == []
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
 
 
 def test_unconfigured_user_skips_everything(tmp_store, admin_user):
     """没配大模型 Key / 向量模型时, 整个记忆功能静默停用。"""
     user_id = str(admin_user["id"])  # tmp_store 里刚建的用户, 未配置任何模型
-    original = long_memory._cache
+    original = memory_client._cache
     stub = _StubCache(_FakeMemory())
-    long_memory._cache = stub
+    memory_client._cache = stub
     try:
         assert asyncio.run(long_memory.recall(user_id, "hi")) == ""
         asyncio.run(long_memory.remember(user_id, "goal", "reply"))
         assert stub.build_attempts == 0  # 连实例构建都不该发生
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
 
 
 def test_remember_background_no_loop_is_noop():
@@ -216,14 +216,14 @@ def test_remember_background_no_loop_is_noop():
 
 def test_clear_cache_closes_instances(tmp_store):
     fake = _FakeMemory()
-    original = long_memory._cache
-    long_memory._cache = long_memory._MemoryCache(maxsize=2)
+    original = memory_client._cache
+    memory_client._cache = long_memory._MemoryCache(maxsize=2)
     try:
-        long_memory._cache._entries[("k",)] = fake
+        memory_client._cache._entries[("k",)] = fake
         long_memory.clear_cache()
         assert fake.closed
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
 
 
 def test_build_instance_none_when_unconfigured(tmp_store, admin_user):
@@ -253,12 +253,12 @@ def test_configured_user_can_build_instance(tmp_store, admin_user):
         def __init__(self, **kwargs):
             self.embeddings = _FakeEmbeddings()
 
-    orig_openai = long_memory.OpenAI
-    long_memory.OpenAI = _FakeOpenAI
+    orig_openai = memory_client.OpenAI
+    memory_client.OpenAI = _FakeOpenAI
     try:
         mem = long_memory._build_instance(user_id)
     finally:
-        long_memory.OpenAI = orig_openai
+        memory_client.OpenAI = orig_openai
     assert mem is not None
     mem.close()
 
@@ -268,15 +268,15 @@ def test_master_switch_skips_recall_and_remember(tmp_store, admin_user):
     user_id = _configure_models(admin_user)
     store.update_memory_settings(user_id, enabled=False)
     fake = _FakeMemory()
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         assert asyncio.run(long_memory.recall(user_id, "hi")) == ""
         asyncio.run(long_memory.remember(user_id, "goal", "reply"))
         assert fake.searches == []
         assert fake.adds == []
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
         store.update_memory_settings(user_id, enabled=True)
 
 
@@ -295,12 +295,12 @@ def test_list_memories_formats(tmp_store, admin_user):
             {"id": "xyz", "memory": ""},
         ]
     )
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         items = asyncio.run(long_memory.list_memories(user_id))
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert items == [
         {
             "id": "abc",
@@ -339,12 +339,12 @@ def test_list_memories_sorted_newest_first(tmp_store, admin_user):
             },
         ]
     )
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         items = asyncio.run(long_memory.list_memories(user_id))
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert [m["id"] for m in items] == ["new", "mid", "old"]
 
 
@@ -356,14 +356,14 @@ def test_delete_memory_checks_ownership(tmp_store, admin_user):
             "theirs": {"id": "theirs", "memory": "y", "user_id": "other"},
         }
     )
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         assert asyncio.run(long_memory.delete_memory(user_id, "mine")) is True
         assert asyncio.run(long_memory.delete_memory(user_id, "theirs")) is False
         assert asyncio.run(long_memory.delete_memory(user_id, "missing")) is False
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert fake.deletes == ["mine"]
 
 
@@ -375,14 +375,14 @@ def test_list_and_delete_when_disabled_still_work(tmp_store, admin_user):
         get_all_results=[{"id": "m1", "memory": "旧事实", "created_at": None, "updated_at": None}],
         get_map={"m1": {"id": "m1", "memory": "旧事实", "user_id": user_id}},
     )
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         items = asyncio.run(long_memory.list_memories(user_id))
         assert len(items) == 1
         assert asyncio.run(long_memory.delete_memory(user_id, "m1")) is True
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
         store.update_memory_settings(user_id, enabled=True)
     assert fake.deletes == ["m1"]
 
@@ -396,13 +396,13 @@ def test_remember_enriches_new_facts(tmp_store, admin_user):
     add_result = {"results": [{"id": "m1", "memory": "学生喜欢天文", "event": "ADD"}]}
     llm = ['参考 {"items": [{"index": 0, "category": "学习偏好", "importance": 5}]} 完']
     fake = _FakeMemory(add_result=add_result, llm_responses=llm)
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     user_id = _configure_models(admin_user)
     try:
         asyncio.run(long_memory.remember(user_id, "我喜欢天文", "好的"))
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert fake.updates == [
         {"id": "m1", "text": None, "metadata": {"category": "学习偏好", "importance": 5}}
     ]
@@ -414,13 +414,13 @@ def test_remember_enrich_garbage_llm_uses_defaults(tmp_store, admin_user):
     """标注 LLM 输出乱码时用默认标签兜底, 不影响记忆本体。"""
     add_result = {"results": [{"id": "m1", "memory": "学生喜欢天文", "event": "ADD"}]}
     fake = _FakeMemory(add_result=add_result, llm_responses=["我不会输出 JSON"])
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     user_id = _configure_models(admin_user)
     try:
         asyncio.run(long_memory.remember(user_id, "goal", "reply"))
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert fake.updates == [
         {
             "id": "m1",
@@ -458,8 +458,8 @@ def test_recall_reranks_and_touches(tmp_store, admin_user):
             },
         ]
     )
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     user_id = _configure_models(admin_user)
     async def run():
         out = await long_memory.recall(user_id, "还记得我吗")
@@ -479,12 +479,12 @@ def test_recall_injects_profile_before_facts(tmp_store, admin_user):
     user_id = _configure_models(admin_user)
     store.save_memory_profile(user_id, "学生喜欢天文，初一年级。")
     fake = _FakeMemory()
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         out = asyncio.run(long_memory.recall(user_id, "我上次学到哪了"))
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert out == "【学生画像】学生喜欢天文，初一年级。\n• 学生喜欢天文"
 
 
@@ -496,12 +496,12 @@ def test_refresh_profile_builds_and_saves(tmp_store, admin_user):
         ],
         llm_responses=["学生喜欢天文；对宇宙感兴趣。"],
     )
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         out = asyncio.run(long_memory.refresh_profile(user_id))
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert out == "学生喜欢天文；对宇宙感兴趣。"
     assert store.get_memory_profile(user_id) == "学生喜欢天文；对宇宙感兴趣。"
 
@@ -509,12 +509,12 @@ def test_refresh_profile_builds_and_saves(tmp_store, admin_user):
 def test_refresh_profile_clears_when_no_memories(tmp_store, admin_user):
     user_id = _configure_models(admin_user)
     fake = _FakeMemory(get_all_results=[], llm_responses=["不应该被调用"])
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         assert asyncio.run(long_memory.refresh_profile(user_id)) == ""
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert store.get_memory_profile(user_id) == ""
     assert fake.llm.calls == []  # 没有事实就不该调用 LLM
 
@@ -537,12 +537,12 @@ def test_consolidate_user_applies_ops_and_refreshes_profile(tmp_store, admin_use
             "学生喜欢天文学；暂时不喜欢语文。",
         ],
     )
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         stats = asyncio.run(long_memory.consolidate_user(user_id))
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert stats == {"merged": 1, "superseded": 1, "profile": True}
     assert fake.deletes == ["m2"]
     # m1 有两次 update: 先合并改写正文, 再合并后重新标注
@@ -573,12 +573,12 @@ def test_consolidate_user_validates_ids(tmp_store, admin_user):
             "画像。",
         ],
     )
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         stats = asyncio.run(long_memory.consolidate_user(user_id))
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert stats["merged"] == 0 and stats["superseded"] == 0
     assert fake.deletes == []
     assert all(u["id"] in ("m1", "m2") for u in fake.updates)
@@ -592,12 +592,12 @@ def test_consolidate_user_skips_llm_with_single_fact(tmp_store, admin_user):
         ],
         llm_responses=["学生喜欢天文。"],
     )
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         stats = asyncio.run(long_memory.consolidate_user(user_id))
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert stats["merged"] == 0 and stats["superseded"] == 0 and stats["profile"] is True
     assert len(fake.llm.calls) == 1  # 只有画像一次, 整理没跑
 
@@ -618,8 +618,8 @@ def test_housekeeping_store_roundtrip(tmp_store, admin_user):
 
 def test_housekeeping_loop_processes_pending_users(tmp_store, admin_user, monkeypatch):
     """循环任务: 只处理水位落后且用过记忆的用户, 整理与画像真实生效。"""
-    monkeypatch.setattr(long_memory, "HOUSEKEEPING_START_DELAY_SECONDS", 0)
-    monkeypatch.setattr(long_memory, "HOUSEKEEPING_INTERVAL_HOURS", 10**6)
+    monkeypatch.setattr(memory_curation, "HOUSEKEEPING_START_DELAY_SECONDS", 0)
+    monkeypatch.setattr(memory_curation, "HOUSEKEEPING_INTERVAL_HOURS", 10**6)
     user_id = _configure_models(admin_user)
     store.record_token_usage(user_id, "memory", total_tokens=1)
     fake = _FakeMemory(
@@ -633,8 +633,8 @@ def test_housekeeping_loop_processes_pending_users(tmp_store, admin_user, monkey
             "学生喜欢天文学。",
         ],
     )
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
 
     async def _run():
         task = asyncio.create_task(long_memory.housekeeping_loop())
@@ -648,7 +648,7 @@ def test_housekeeping_loop_processes_pending_users(tmp_store, admin_user, monkey
     try:
         asyncio.run(_run())
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert fake.deletes == ["m2"]
     assert store.get_memory_profile(user_id) == "学生喜欢天文学。"
     assert store.stale_housekeeping_users() == []  # 水位已推进
@@ -676,12 +676,12 @@ def test_list_memories_carries_curation_metadata(tmp_store, admin_user):
              "metadata": {"superseded": True, "superseded_reason": "过时"}},
         ]
     )
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         items = asyncio.run(long_memory.list_memories(user_id))
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert items[0]["superseded"] is True
     assert items[0]["category"] is None
 
@@ -696,12 +696,12 @@ def test_refresh_profile_skips_when_user_edited(tmp_store, admin_user):
         ],
         llm_responses=["自动生成的画像"],
     )
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         out = asyncio.run(long_memory.refresh_profile(user_id))
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert out == "用户自己写的画像"
     assert fake.llm.calls == []  # 没有调用 LLM 重写
     assert store.get_memory_profile(user_id) == "用户自己写的画像"
@@ -715,12 +715,12 @@ def test_auto_refresh_does_not_clear_user_edit_flag(tmp_store, admin_user):
     assert store.get_memory_profile(user_id) == "自动版"  # 内容更新了
     # 但下一次刷新仍会被跳过, 用户的修正意图保留
     fake = _FakeMemory(get_all_results=[], llm_responses=["x"])
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         assert asyncio.run(long_memory.refresh_profile(user_id)) == "自动版"
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert fake.llm.calls == []
 
 
@@ -732,14 +732,14 @@ def test_update_memory_text_checks_ownership(tmp_store, admin_user):
             "theirs": {"id": "theirs", "memory": "旧", "user_id": "other"},
         }
     )
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         assert asyncio.run(long_memory.update_memory_text(user_id, "mine", "新内容")) is True
         assert asyncio.run(long_memory.update_memory_text(user_id, "theirs", "改别人的")) is False
         assert asyncio.run(long_memory.update_memory_text(user_id, "mine", "   ")) is False
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     text_updates = [(u["id"], u["text"]) for u in fake.updates if u["text"]]
     assert text_updates == [("mine", "新内容")]
     # 正文变了 → 顺路重标注 (默认标签)
@@ -756,13 +756,13 @@ def test_archive_stores_verbatim_and_labels(tmp_store, admin_user):
         add_result=add_result,
         llm_responses=['{"items": [{"index": 0, "category": "学习目标", "importance": 5}]}'],
     )
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     user_id = _configure_models(admin_user)
     try:
         assert asyncio.run(long_memory.archive(user_id, "用户要存的原文")) is True
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     messages, kwargs = fake.adds[0]
     assert messages == [{"role": "user", "content": "用户要存的原文"}]
     assert kwargs.get("infer") is False  # 原样入库, 不抽取改写
@@ -774,12 +774,12 @@ def test_archive_stores_verbatim_and_labels(tmp_store, admin_user):
 def test_archive_guards(tmp_store, admin_user):
     """空内容 / 未启用 / 未配置模型时静默跳过。"""
     fake = _FakeMemory()
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     user_id = str(admin_user["id"])  # 未配置模型
     try:
         assert asyncio.run(long_memory.archive(user_id, "内容")) is False
         assert asyncio.run(long_memory.archive("", "内容")) is False
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
     assert fake.adds == []

@@ -131,8 +131,9 @@ def fake_coach() -> FakeCoach:
 @pytest.fixture
 def client(tmp_store, fake_coach, admin_user, monkeypatch):
     """TestClient acting as the admin user (default Authorization header)."""
-    monkeypatch.setattr(main, "coach", fake_coach)
-    monkeypatch.setattr(main, "is_configured_for_user", lambda uid: True)
+    from app.api import helpers
+    monkeypatch.setattr(helpers, "coach", fake_coach)
+    monkeypatch.setattr(helpers, "is_configured_for_user", lambda uid: True)
     monkeypatch.setattr(store, "is_llm_configured_for_user", lambda uid: True)
     c = TestClient(main.app)
     c.headers.update(auth_headers(admin_user))
@@ -141,8 +142,9 @@ def client(tmp_store, fake_coach, admin_user, monkeypatch):
 
 @pytest.fixture
 def unconfigured_client(tmp_store, fake_coach, admin_user, monkeypatch):
-    monkeypatch.setattr(main, "coach", fake_coach)
-    monkeypatch.setattr(main, "is_configured_for_user", lambda uid: False)
+    from app.api import helpers
+    monkeypatch.setattr(helpers, "coach", fake_coach)
+    monkeypatch.setattr(helpers, "is_configured_for_user", lambda uid: False)
     monkeypatch.setattr(store, "is_llm_configured_for_user", lambda uid: False)
     c = TestClient(main.app)
     c.headers.update(auth_headers(admin_user))

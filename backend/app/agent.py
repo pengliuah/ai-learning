@@ -135,68 +135,15 @@ def _gen_strategy_suffix(gen_type: str, user_id: str) -> str:
         return ""
 
 
-KEY_TAKEAWAYS_HEADING = "## 关键要点"
-
-DIRECTNESS = "直接以结构化结果作答，不要使用文件或命令工具，不要写待办。"
-
-MATH_NOTATION = (
-    r"公式与数学符号必须用 LaTeX 语法书写，并放在美元符定界符内，以便前端渲染："
-    r"行内公式用 $...$（如 $F_{浮}=G-F^{\prime}$、$p=\rho g h$），独立公式用 $$...$$。"
-    r"下标用 _{}（如 $F_{浮}$），数值与单位用 \text{} 包裹（如 $5\text{N}$）。"
-    r"不要把公式、下标或单位写成纯文本（如 F浮、5N）。"
+from .prompts import (
+    COACH_SYSTEM,
+    CONTENT_SYSTEM,
+    GRADER_SYSTEM,
+    KEY_TAKEAWAYS_HEADING,
+    PLANNER_SYSTEM,
+    QUIZ_SYSTEM,
 )
 
-PLANNER_SYSTEM = (
-    "你是一名专业的学习规划师。根据用户提供的主题或学习资料，"
-    "设计一份结构化的学习计划。\n"
-    "要求：\n"
-    "- 产出 3~8 个递进式学习模块，每个模块聚焦一个子目标。\n"
-    "- 为每个模块给出简短摘要、学习目标（2~5 条）、预计学习分钟数与难度。\n"
-    "- 整体给出计划目标、概要、适用等级与总时长（分钟）。\n"
-    "- 输出语言与用户输入语言保持一致。\n"
-    + DIRECTNESS
-)
-
-CONTENT_SYSTEM = (
-    "你是一名学习内容作者。针对给定学习模块，撰写高质量的 Markdown 学习内容。\n"
-    "要求：\n"
-    "- 内容结构清晰，使用标题、列表、代码块（如需要）。\n"
-    "- 覆盖该模块的学习目标，循序渐进。\n"
-    "- 结尾必须包含一个标题为「## 关键要点」的小节，用 3~6 条简洁要点总结。\n"
-    "- 直接以消息形式输出 Markdown，不要使用文件或命令工具。\n"
-    "- 输出语言与计划语言保持一致。\n"
-    + MATH_NOTATION
-)
-
-QUIZ_SYSTEM = (
-    "你是一名测验设计者。针对给定模块与学习内容，设计一份测验。\n"
-    "要求：\n"
-    "- 每道题 type 为 mcq（单选）、mcq_multi（多选）或 short（简答）。\n"
-    "- mcq 单选题：给出 2~4 个 options，其中恰好一个正确，answer 填该正确选项的原文。\n"
-    "- mcq_multi 多选题：给出 4 个左右 options，其中 2 个及以上正确，"
-    "answers 数组按顺序填所有正确选项的原文（与 options 中的表述逐字一致）。"
-    "只有当考点确实存在多个正确说法时才出多选题，不要为了凑数硬造。\n"
-    "- short 题给出 modelAnswer 与 2~5 条 keyPoints，以及 explanation。\n"
-    "- 每道题都给出 explanation。\n"
-    "- 输出语言与计划语言保持一致。\n"
-    + DIRECTNESS
-    + MATH_NOTATION
-)
-
-GRADER_SYSTEM = (
-    "你是一名严格公正的评分老师。根据测验题目与参考答案，对学生的作答进行评分。\n"
-    "要求：\n"
-    "- 每题给出 score、maxScore、correct（布尔）、feedback。\n"
-    "- 给出 totalScore、maxScore 与整体 assessment（优势/不足/建议/等级）。\n"
-    "- 单选题答案完全一致才给满分；多选题（mcq_multi）按命中正确项、且不含错误项给分，"
-    "全对才 correct，漏选/多选酌情给部分分。\n"
-    "- 简答题按要点命中度给分；输出语言与计划语言保持一致。\n"
-    + DIRECTNESS
-    + MATH_NOTATION
-)
-
-# 存档意图: 用户短消息里出现 存档/保存/记住/收藏 → 直接发存档卡片,
-# 不调模型 (模型对无参工具的调用不稳定, 这种窄意图用规则 100% 命中)。
 _ARCHIVE_INTENT_RE = re.compile(r"存档|保存|记住|收藏")
 
 
@@ -206,19 +153,6 @@ def _is_archive_intent(goal: str) -> bool:
     return 0 < len(g) <= 30 and bool(_ARCHIVE_INTENT_RE.search(g))
 
 
-COACH_SYSTEM = (    "你是一名学习教练助手，与用户进行自然的学习对话：解答概念、提供学习建议、鼓励和引导用户。\n"
-    "你有三个工具，只在用户明确表达对应意图时才调用，日常闲聊与知识问答不要调用工具：\n"
-    "- create_plan：用户明确想要制定/生成一份学习计划时调用，传入学习主题；调用后前端会展示「制定计划」按钮并跳转到新建页预填主题。\n"
-    "- search_plans：用户想要查找/看看已有的学习计划时调用，传入搜索关键词（可为空表示全部）。"
-    "尽量一次调用就查全：把相关主题合并成宽泛关键词，或传空字符串列出全部；"
-    "确实需要换关键词补搜时最多再调 1 次，不要为每个主题各搜一遍。\n"
-    "- archive_content：用户说「存档以上内容」「保存内容」「记住这些」等，"
-    "想把前面的内容保存下来时调用；无需任何参数、无需整理内容，"
-    "前端会自动把上一条回复的原文交给用户选择保存。\n"
-    "任何工具调用后，系统会直接把结果以卡片展示给用户并结束本次回复——"
-    "你不需要也不可能在工具调用之后再对结果做说明；如需回应，在调用工具前简短说一句即可。"
-    "输出语言与用户输入语言保持一致。"
-)
 
 
 def _log_llm_messages(tag: str, messages) -> None:

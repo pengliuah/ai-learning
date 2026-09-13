@@ -4,7 +4,7 @@ Mem0 is stubbed at the long_memory layer so these stay offline.
 """
 from __future__ import annotations
 
-from app import long_memory, store
+from app import long_memory, memory_client, store
 from app.auth import create_access_token
 
 
@@ -83,8 +83,8 @@ def test_memory_settings_default_and_toggle(client, admin_user):
 def test_list_and_delete_memories(client, admin_user, tmp_store):
     user_id = _configure(admin_user)
     fake = _FakeMemory(user_id)
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         r = client.get("/api/memories")
         assert r.status_code == 200
@@ -101,7 +101,7 @@ def test_list_and_delete_memories(client, admin_user, tmp_store):
         r = client.delete("/api/memories/m1")
         assert r.status_code == 404
     finally:
-        long_memory._cache = original
+        memory_client._cache = original
 
 
 def test_delete_rejects_other_users_memory(client, admin_user, normal_user, tmp_store):
@@ -119,12 +119,12 @@ def test_delete_rejects_other_users_memory(client, admin_user, normal_user, tmp_
     )
 
     fake = _FakeMemory(admin_id)
-    original = long_memory._cache
-    long_memory._cache = _StubCache(fake)
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
     try:
         uh = {"Authorization": f"Bearer {create_access_token(normal_user)}"}
         r = client.delete("/api/memories/m1", headers=uh)
         assert r.status_code == 404
         assert "m1" in fake.items
     finally:
-        long_memory._cache = original
+        memory_client._cache = original

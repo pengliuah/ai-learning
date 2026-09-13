@@ -6,6 +6,7 @@ author_content_stream run their real normalization & persistence logic.
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -271,13 +272,14 @@ def _usage(tokens_in, tokens_out):
 
 
 def test_coach_stream_tool_events_and_usage_accumulation(tmp_store, admin_user, monkeypatch):
-    """on_tool_start 等事件不能让 chunk 未绑定就崩; 用量跨多轮只加数值键。"""
+    """工具结束后流立即终止（工具卡片即答复）; 用量跨多轮只加数值键。"""
     user_id = str(admin_user["id"])
     events = [
         {"event": "on_chat_model_stream",
          "data": {"chunk": _FakeChunk("你好", _usage(10, 2))}},
         {"event": "on_tool_start", "name": "search_plans", "data": {}},
         {"event": "on_tool_end", "name": "search_plans", "data": {"output": "[]"}},
+        # 工具结束后的模型文本不会再流出 (新语义: 流在 on_tool_end 后终止)
         {"event": "on_chat_model_stream",
          "data": {"chunk": _FakeChunk("！相信我", _usage(5, 3))}},
     ]
@@ -292,8 +294,32 @@ def test_coach_stream_tool_events_and_usage_accumulation(tmp_store, admin_user, 
 
     out = asyncio.run(run())
     deltas = [p["text"] for k, p in out if k == "delta"]
-    assert deltas == ["你好", "！相信我"]
+    assert deltas == ["你好"]
     assert ("tool", {"phase": "start", "name": "search_plans"}) in out
+    assert any(k == "tool" and p["phase"] == "end" and p["name"] == "search_plans" for k, p in out)
 
     s = store.get_usage_summary(user_id)["today"]["llm"]
-    assert s["inputTokens"] == 15 and s["outputTokens"] == 5 and s["totalTokens"] == 20
+    assert s["inputTokens"] == 10 and s["outputTokens"] == 2 and s["totalTokens"] == 12
+
+
+def test_coach_stream_create_plan_synthesizes_end_from_args(tmp_store, admin_user, monkeypatch):
+    """create_plan 在 on_tool_start 即合成带主题的 end 事件并终止流（不执行工具）。"""
+    user_id = str(admin_user["id"])
+    events = [
+        {"event": "on_tool_start", "name": "create_plan",
+         "data": {"input": {"topic": "Python 装饰器"}}},
+        {"event": "on_tool_end", "name": "create_plan", "data": {"output": "不应到达"}},
+    ]
+    c = LearningCoach()
+    monkeypatch.setattr(c, "_build_chat_agent", lambda uid: _FakeStreamAgent(events))
+
+    async def run():
+        out = []
+        async for kind, payload in c.coach_stream("帮我制定计划", history=[], user_id=user_id):
+            out.append((kind, payload))
+        return out
+
+    out = asyncio.run(run())
+    end = [p for k, p in out if k == "tool" and p["phase"] == "end"]
+    assert len(end) == 1
+    assert json.loads(end[0]["output"]) == {"topic": "Python 装饰器"}

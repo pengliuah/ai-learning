@@ -197,16 +197,16 @@ GRADER_SYSTEM = (
 
 COACH_SYSTEM = (
     "你是一名学习教练助手，与用户进行自然的学习对话：解答概念、提供学习建议、鼓励和引导用户。\n"
-    "你有两个工具，只在用户明确表达对应意图时才调用，日常闲聊与知识问答不要调用工具：\n"
-    "- create_plan：用户明确想要制定/生成一份学习计划时调用，传入学习主题；调用后前端会跳转到新建计划页面并预填主题，你无需自行生成计划内容。\n"
+    "你有三个工具，只在用户明确表达对应意图时才调用，日常闲聊与知识问答不要调用工具：\n"
+    "- create_plan：用户明确想要制定/生成一份学习计划时调用，传入学习主题；调用后前端会展示「制定计划」按钮并跳转到新建页预填主题。\n"
     "- search_plans：用户想要查找/看看已有的学习计划时调用，传入搜索关键词（可为空表示全部）。"
     "尽量一次调用就查全：把相关主题合并成宽泛关键词，或传空字符串列出全部；"
     "确实需要换关键词补搜时最多再调 1 次，不要为每个主题各搜一遍。\n"
     "- archive_content：用户说「存档以上内容」「保存内容」「记住这些」等，"
     "想把前面的内容保存下来时调用；无需任何参数、无需整理内容，"
-    "前端会自动把上一条回复的原文交给用户选择保存；"
-    "调用后前端会出现「保存到 IMA」「保存到长期记忆」两个按钮，你只需简短确认，不要重复执行保存。\n"
-    "调用工具后，根据返回结果用自然语言向用户说明。"
+    "前端会自动把上一条回复的原文交给用户选择保存。\n"
+    "任何工具调用后，系统会直接把结果以卡片展示给用户并结束本次回复——"
+    "你不需要也不可能在工具调用之后再对结果做说明；如需回应，在调用工具前简短说一句即可。"
     "输出语言与用户输入语言保持一致。"
 )
 
@@ -722,11 +722,20 @@ class LearningCoach:
                         # 前端只需要 end 事件渲染按钮, 这里合成一个并直接结束流。
                         yield ("tool", {"phase": "end", "name": "archive_content", "output": "{}"})
                         break
+                    if event.get("name") == "create_plan":
+                        # 跳转主题就在工具入参里, 合成 end 事件（卡片渲染用）并结束流
+                        args = (event.get("data") or {}).get("input") or {}
+                        output = json.dumps({"topic": args.get("topic", "")}, ensure_ascii=False)
+                        yield ("tool", {"phase": "end", "name": "create_plan", "output": output})
+                        break
                 elif kind == "on_tool_end":
                     output = event.get("data", {}).get("output", "")
                     if hasattr(output, "content"):
                         output = output.content
                     yield ("tool", {"phase": "end", "name": event.get("name"), "output": str(output)})
+                    if event.get("name") == "search_plans":
+                        # 检索结果卡片本身就是答复, 结束流, 不让模型再总结一段
+                        break
         finally:
             _record_usage(user_id, "coach", total_usage)
             # 长期记忆写入: 后台任务, 不阻塞响应收尾 (内部吞掉一切异常)

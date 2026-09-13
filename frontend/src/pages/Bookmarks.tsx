@@ -114,7 +114,7 @@ export function Bookmarks() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-2xl">
+    <div className="mx-auto w-full max-w-5xl">
       <div className="mb-3 flex items-center gap-3">
         <Link
           to="/"

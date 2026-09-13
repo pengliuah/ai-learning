@@ -738,3 +738,39 @@ def test_update_memory_text_checks_ownership(tmp_store, admin_user):
     finally:
         long_memory._cache = original
     assert [(u["id"], u["text"]) for u in fake.updates] == [("mine", "新内容")]
+
+
+def test_archive_stores_verbatim_and_labels(tmp_store, admin_user):
+    """「保存到长期记忆」: infer=False 逐字入库 + 标注写回。"""
+    add_result = {"results": [{"id": "m9", "memory": "用户要存的原文", "event": "ADD"}]}
+    fake = _FakeMemory(
+        add_result=add_result,
+        llm_responses=['{"items": [{"index": 0, "category": "学习目标", "importance": 5}]}'],
+    )
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    user_id = _configure_models(admin_user)
+    try:
+        assert asyncio.run(long_memory.archive(user_id, "用户要存的原文")) is True
+    finally:
+        long_memory._cache = original
+    messages, kwargs = fake.adds[0]
+    assert messages == [{"role": "user", "content": "用户要存的原文"}]
+    assert kwargs.get("infer") is False  # 原样入库, 不抽取改写
+    assert fake.updates == [
+        {"id": "m9", "text": None, "metadata": {"category": "学习目标", "importance": 5}}
+    ]
+
+
+def test_archive_guards(tmp_store, admin_user):
+    """空内容 / 未启用 / 未配置模型时静默跳过。"""
+    fake = _FakeMemory()
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    user_id = str(admin_user["id"])  # 未配置模型
+    try:
+        assert asyncio.run(long_memory.archive(user_id, "内容")) is False
+        assert asyncio.run(long_memory.archive("", "内容")) is False
+    finally:
+        long_memory._cache = original
+    assert fake.adds == []

@@ -10,13 +10,14 @@ import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 
-from . import long_memory, store
+from . import ima, long_memory, store
 from .agent import LearningCoach, _friendly_llm_error
 from .auth import (
     create_access_token,
@@ -28,7 +29,7 @@ from .auth import (
     rotate_refresh_token,
     verify_password,
 )
-from .config import BACKEND_DIR, settings
+from .config import BACKEND_DIR, _CST, settings
 from .middleware import AccessLogMiddleware
 from .schemas import (
     AdminCreateUserRequest,
@@ -46,6 +47,8 @@ from .schemas import (
     ImaSettings,
     ImaSettingsUpdate,
     LoginRequest,
+    ImaArchiveRequest,
+    MemoryArchiveRequest,
     MemoryOut,
     MemoryProfileUpdate,
     MemoryUpdate,
@@ -1183,6 +1186,48 @@ async def edit_memory(memory_id: str, req: MemoryUpdate, user: dict = Depends(ge
     if not ok:
         raise HTTPException(status_code=404, detail="记忆不存在或不属于当前用户")
     return {"updated": memory_id}
+
+
+@app.post("/api/memories/archive")
+async def archive_memory(req: MemoryArchiveRequest, user: dict = Depends(get_current_user)):
+    """把用户明确要求保存的内容原样写入长期记忆（聊天页「保存到长期记忆」按钮）。
+
+    逐字入库（跳过抽取改写），仍会自动标注分类/重要性。
+    返回:
+        200 ``{"ok": true}``
+    错误:
+        - 503: 未配置模型 / 记忆总开关关闭。
+    """
+    uid = str(user["id"])
+    ok = await long_memory.archive(uid, req.content)
+    if not ok:
+        raise HTTPException(status_code=503, detail="写入失败（记忆未开启或模型未配置）")
+    return {"ok": True}
+
+
+@app.post("/api/ima/archive")
+def archive_to_ima(req: ImaArchiveRequest, user: dict = Depends(get_current_user)):
+    """把聊天内容保存为 IMA 笔记（聊天页「保存到 IMA」按钮）。
+
+    与模块内容保存不同：直接把文本导入 IMA，不经 LLM 格式化
+    （对话内容本身已是干净文本）。
+
+    返回 ``SaveToImaResponse``: ``{ok, noteId, title, detail}``。
+    """
+    uid = str(user["id"])
+    row = store.get_ima_settings_row(uid)
+    client_id = row["ima_client_id"]
+    api_key = row["ima_api_key"]
+    if not client_id or not api_key:
+        return SaveToImaResponse(ok=False, detail="IMA 凭证未配置，请先在设置中填写 Client ID 和 API Key")
+    title = (req.title or "").strip() or f"聊天存档 {datetime.now(_CST):%Y-%m-%d %H:%M}"
+    try:
+        result = ima.import_note(client_id, api_key, req.content, title)
+    except Exception as exc:
+        logger.error("archive_to_ima: failed (user=%s): %s", user["username"], exc)
+        return SaveToImaResponse(ok=False, detail=str(exc))
+    logger.info("archive_to_ima: ok (user=%s) note_id=%s", user["username"], result.get("note_id"))
+    return SaveToImaResponse(ok=True, noteId=result.get("note_id") or "", title=title, detail="")
 
 
 @app.delete("/api/memories/{memory_id}")

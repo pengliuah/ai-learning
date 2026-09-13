@@ -297,6 +297,20 @@ export const api = {
   deleteMemory: (memoryId: string) =>
     json<{ deleted: string }>(`/memories/${memoryId}`, { method: "DELETE" }),
 
+  archiveToMemory: (content: string) =>
+    json<{ ok: boolean }>(`/memories/archive`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    }),
+
+  archiveToIma: (content: string, title?: string) =>
+    json<SaveToImaResponse>(`/ima/archive`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content, title }),
+    }),
+
   getMemoryProfile: () => json<MemoryProfile>(`/memories/profile`),
 
   updateMemoryProfile: (profile: string) =>

@@ -658,6 +658,38 @@ async def update_memory_text(user_id: str, memory_id: str, text: str) -> bool:
         return False
 
 
+async def archive(user_id: str, content: str) -> bool:
+    """把用户明确要求保存的内容原样写入长期记忆（聊天页「存档」按钮）。
+
+    用 ``infer=False`` 跳过抽取，逐字入库——用户点名要记的内容不做改写；
+    入库后仍走一次标注（分类/重要性）。任何失败吞掉返回 False。
+    """
+    content = (content or "").strip()
+    if not user_id or not content:
+        return False
+    if not store.is_memory_enabled(user_id):
+        return False
+    try:
+        mem = _get_instance(user_id)
+        if mem is None:
+            return False
+
+        def _add_and_enrich() -> None:
+            result = mem.add(
+                [{"role": "user", "content": content}],
+                user_id=user_id,
+                infer=False,
+            )
+            _enrich_new_memories(mem, result)
+
+        await asyncio.to_thread(_add_and_enrich)
+        logger.info("long_memory: archived (user=%s, %d chars)", user_id, len(content))
+        return True
+    except Exception as exc:
+        logger.warning("long_memory.archive failed (user=%s): %s", user_id, exc)
+        return False
+
+
 def remember_background(user_id: str, goal: str, reply: str) -> None:
     """在事件循环里创建后台写入任务（fire-and-forget），立即返回。
 

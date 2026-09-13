@@ -246,6 +246,17 @@ class MemoryProfileUpdate(BaseModel):
     profile: str
 
 
+class MemoryArchiveRequest(BaseModel):
+    """POST /api/memories/archive request body."""
+    content: str
+
+
+class ImaArchiveRequest(BaseModel):
+    """POST /api/ima/archive request body."""
+    content: str
+    title: str | None = None
+
+
 class MemoryOut(BaseModel):
     """单条长期记忆（Mem0 事实）。"""
     id: str

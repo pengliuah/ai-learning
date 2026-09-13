@@ -2,22 +2,23 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Send, Loader2, AlertCircle, ArrowRight, ClipboardList,
-  Search, Trash2, Copy, Check,
+  Search, Trash2, Copy, Check, Bookmark, Brain,
 } from "lucide-react";
 import { Markdown } from "../components/Markdown";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import type { ChatTurn, PlanListItem } from "../api/types";
+import type { ChatTurn, PlanListItem, SaveToImaResponse } from "../api/types";
 
 const TOOL_LABELS: Record<string, string> = {
   create_plan: "制定计划",
   search_plans: "搜索计划",
+  archive_content: "存档内容",
 };
 
 interface ToolEvent {
   name: string;
   phase: "start" | "end";
-  data?: { topic?: string } | PlanListItem[];
+  data?: { topic?: string; content?: string } | PlanListItem[];
   note?: string;
 }
 
@@ -72,6 +73,75 @@ function coalesceSearchTools(tools: ToolEvent[]): ToolEvent[] {
   return [...merged.values()];
 }
 
+/** 聊天存档卡片：模型识别到「存档/保存/记住」意图后出现，
+ *  两个按钮分别把内容写入长期记忆 / IMA 笔记，写入后卡片定格为完成态。 */
+function ArchiveCard({ tool }: { tool: ToolEvent }) {
+  const [state, setState] = useState<"idle" | "saving" | "memory" | "ima">("idle");
+  const [error, setError] = useState("");
+  const content = tool.data && !Array.isArray(tool.data) ? tool.data.content || "" : "";
+  if (!content) return null;
+
+  const run = async (target: "memory" | "ima") => {
+    setState("saving");
+    setError("");
+    try {
+      if (target === "memory") await api.archiveToMemory(content);
+      else await api.archiveToIma(content);
+      setState(target);
+    } catch (e) {
+      setError((e as Error).message || "保存失败");
+      setState("idle");
+    }
+  };
+
+  if (state === "memory") {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
+        <Check className="h-4 w-4 shrink-0" />
+        已保存到长期记忆（记忆页可查看/编辑）
+      </div>
+    );
+  }
+  if (state === "ima") {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
+        <Check className="h-4 w-4 shrink-0" />
+        已保存为 IMA 笔记
+      </div>
+    );
+  }
+  return (
+    <div className="w-72 max-w-full rounded-lg border border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-800 dark:bg-indigo-900/30">
+      <p className="mb-2 line-clamp-3 text-xs leading-5 text-indigo-700 dark:text-indigo-300">
+        存档内容：{content}
+      </p>
+      <div className="flex gap-2">
+        <button
+          onClick={() => run("memory")}
+          disabled={state === "saving"}
+          className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-60 dark:bg-indigo-500 dark:hover:bg-indigo-600"
+        >
+          <Brain className="h-3 w-3" />
+          保存到长期记忆
+        </button>
+        <button
+          onClick={() => run("ima")}
+          disabled={state === "saving"}
+          className="inline-flex items-center gap-1 rounded-md border border-indigo-300 px-2.5 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 disabled:opacity-60 dark:border-indigo-600 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
+        >
+          <Bookmark className="h-3 w-3" />
+          保存到 IMA
+        </button>
+      </div>
+      {(state === "saving" || error) && (
+        <p className={`mt-1.5 text-xs ${error ? "text-red-500" : "text-indigo-400"}`}>
+          {error || "保存中..."}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ToolCard({ tool, navigate }: { tool: ToolEvent; navigate: ReturnType<typeof useNavigate> }) {
   const label = TOOL_LABELS[tool.name] || tool.name;
   if (tool.phase === "start") {
@@ -81,6 +151,9 @@ function ToolCard({ tool, navigate }: { tool: ToolEvent; navigate: ReturnType<ty
         正在{label}...
       </div>
     );
+  }
+  if (tool.name === "archive_content") {
+    return <ArchiveCard tool={tool} />;
   }
   if (tool.name === "create_plan" && tool.data && typeof tool.data === "object" && !Array.isArray(tool.data)) {
     const d = tool.data as { topic?: string };

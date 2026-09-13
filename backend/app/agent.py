@@ -202,6 +202,9 @@ COACH_SYSTEM = (
     "- search_plans：用户想要查找/看看已有的学习计划时调用，传入搜索关键词（可为空表示全部）。"
     "尽量一次调用就查全：把相关主题合并成宽泛关键词，或传空字符串列出全部；"
     "确实需要换关键词补搜时最多再调 1 次，不要为每个主题各搜一遍。\n"
+    "- archive_content：用户说「存档以上内容」「保存内容」「记住这些」等，"
+    "想把前面的内容保存下来时调用，把要存档的内容整理成完整文本传入；"
+    "调用后前端会出现「保存到 IMA」「保存到长期记忆」两个按钮，你只需简短确认，不要重复执行保存。\n"
     "调用工具后，根据返回结果用自然语言向用户说明。"
     "输出语言与用户输入语言保持一致。"
 )
@@ -631,9 +634,18 @@ class LearningCoach:
                     ensure_ascii=False,
                 )
 
+            @tool
+            def archive_content(content: str) -> str:
+                """当用户说「存档以上内容」「保存内容」「记住这些」等，想保存前面的对话或讲解内容时调用。把要存档的内容完整整理后放入 content。
+
+                Args:
+                    content: 要存档的内容，保留关键细节的完整文本。
+                """
+                return json.dumps({"content": content}, ensure_ascii=False)
+
             self._chat_agents[user_id] = create_agent(
                 model=build_streaming_model(user_id),
-                tools=[create_plan, search_plans],
+                tools=[create_plan, search_plans, archive_content],
                 system_prompt=COACH_SYSTEM,
             )
         return self._chat_agents[user_id]

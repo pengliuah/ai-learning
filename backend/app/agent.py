@@ -717,6 +717,11 @@ class LearningCoach:
                         yield ("delta", {"text": text})
                 elif kind == "on_tool_start":
                     yield ("tool", {"phase": "start", "name": event.get("name")})
+                    if event.get("name") == "archive_content":
+                        # 存档意图: 卡片本身就是回应, 不让模型再生成一段废话。
+                        # 前端只需要 end 事件渲染按钮, 这里合成一个并直接结束流。
+                        yield ("tool", {"phase": "end", "name": "archive_content", "output": "{}"})
+                        break
                 elif kind == "on_tool_end":
                     output = event.get("data", {}).get("output", "")
                     if hasattr(output, "content"):

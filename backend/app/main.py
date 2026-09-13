@@ -1083,9 +1083,10 @@ def put_memory_settings(req: MemorySettingsUpdate, user: dict = Depends(get_curr
 
 @app.get("/api/memories")
 async def list_memories(user: dict = Depends(get_current_user)):
-    """列出当前用户的长期记忆（Mem0 事实列表）。
+    """列出当前用户的长期记忆（Mem0 事实列表，含整理元数据）。
 
     模型未配置时返回空列表；总开关关闭时仍可查看已有记忆。
+    每条含 category / importance / superseded（被整理任务标记过时）。
     """
     uid = str(user["id"])
     items = await long_memory.list_memories(uid)
@@ -1095,9 +1096,47 @@ async def list_memories(user: dict = Depends(get_current_user)):
             memory=m["memory"],
             createdAt=m.get("createdAt"),
             updatedAt=m.get("updatedAt"),
+            category=m.get("category"),
+            importance=m.get("importance"),
+            superseded=bool(m.get("superseded")),
         )
         for m in items
     ]
+
+
+@app.get("/api/memories/status")
+async def memory_status(user: dict = Depends(get_current_user)):
+    """记忆整理状态一览：画像 / 水位 / 标注覆盖率 / 循环配置。
+
+    用于回答"整理到底跑没跑"：
+    - lastRunAt 为 null 且 touched=false → 循环还没处理过该用户；
+    - labeled < total → 有事实尚未被标注（写入时的标注调用失败或来自老数据）；
+    - profile 为空且记忆非空 → 画像尚未生成（等下一轮或手动触发整理）。
+    """
+    uid = str(user["id"])
+    items = await long_memory.list_memories(uid)
+    st = await asyncio.to_thread(store.memory_housekeeping_status, uid)
+    return {
+        **st,
+        "total": len(items),
+        "labeled": sum(1 for m in items if m.get("category")),
+        "superseded": sum(1 for m in items if m.get("superseded")),
+        "housekeepingEnabled": settings.memory_housekeeping,
+        "intervalHours": settings.memory_housekeeping_interval_hours,
+    }
+
+
+@app.post("/api/memories/consolidate")
+async def consolidate_memories(user: dict = Depends(get_current_user)):
+    """立即为当前用户执行一次记忆整理（合并重复/标记过时/刷新画像）。
+
+    与夜间循环相同的逻辑，用于不等 6 小时间隔的手动验证。
+    返回: ``{"merged": int, "superseded": int, "profile": bool}``。
+    """
+    uid = str(user["id"])
+    stats = await long_memory.consolidate_user(uid)
+    await asyncio.to_thread(store.touch_housekeeping, uid)
+    return stats
 
 
 @app.delete("/api/memories/{memory_id}")

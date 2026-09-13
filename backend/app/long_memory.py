@@ -287,12 +287,20 @@ def clear_cache() -> None:
 
 
 def _format_memory_item(it: dict) -> dict:
-    """把 mem0 结果项规范成 API 用的 dict（id / memory / createdAt / updatedAt）。"""
+    """把 mem0 结果项规范成 API 用的 dict。
+
+    整理元数据 (category/importance/superseded) 在 mem0 返回项的 metadata
+    子字典里, 一并带出供状态页/管理 UI 使用。
+    """
+    meta = it.get("metadata") if isinstance(it.get("metadata"), dict) else {}
     return {
         "id": str(it.get("id") or ""),
         "memory": (it.get("memory") or "").strip(),
         "createdAt": it.get("created_at"),
         "updatedAt": it.get("updated_at"),
+        "category": meta.get("category"),
+        "importance": meta.get("importance"),
+        "superseded": bool(meta.get("superseded")),
     }
 
 
@@ -814,8 +822,7 @@ async def consolidate_user(user_id: str) -> dict:
 
         stats.update(await asyncio.to_thread(_run))
         stats["profile"] = bool(await refresh_profile(user_id))
-        if stats["merged"] or stats["superseded"] or stats["profile"]:
-            logger.info("long_memory: 整理完成 (user=%s) %s", user_id, stats)
+        logger.info("long_memory: 整理完成 (user=%s) %s", user_id, stats)
         return stats
     except Exception as exc:
         logger.warning("long_memory.consolidate_user failed (user=%s): %s", user_id, exc)

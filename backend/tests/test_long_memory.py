@@ -289,6 +289,7 @@ def test_list_memories_formats(tmp_store, admin_user):
                 "memory": "学生喜欢天文",
                 "created_at": "2026-09-01T00:00:00Z",
                 "updated_at": None,
+                "metadata": {"category": "学习偏好", "importance": 5},
             },
             {"id": "", "memory": "应被丢掉"},
             {"id": "xyz", "memory": ""},
@@ -306,6 +307,9 @@ def test_list_memories_formats(tmp_store, admin_user):
             "memory": "学生喜欢天文",
             "createdAt": "2026-09-01T00:00:00Z",
             "updatedAt": None,
+            "category": "学习偏好",
+            "importance": 5,
+            "superseded": False,
         }
     ]
     assert fake.get_alls[0]["filters"] == {"user_id": user_id}
@@ -647,3 +651,33 @@ def test_housekeeping_loop_processes_pending_users(tmp_store, admin_user, monkey
     assert store.stale_housekeeping_users() == []  # 水位已推进
 
 
+
+
+def test_housekeeping_status_roundtrip(tmp_store, admin_user):
+    """状态查询: 画像/水位/是否被循环处理过。"""
+    user_id = str(admin_user["id"])
+    st = store.memory_housekeeping_status(user_id)
+    assert st["profile"] == "" and st["lastRunAt"] is None and st["touched"] is False
+    store.save_memory_profile(user_id, "画像")
+    store.touch_housekeeping(user_id)
+    st = store.memory_housekeeping_status(user_id)
+    assert st["profile"] == "画像"
+    assert st["lastRunAt"] is not None and st["touched"] is True
+
+
+def test_list_memories_carries_curation_metadata(tmp_store, admin_user):
+    user_id = _configure_models(admin_user)
+    fake = _FakeMemory(
+        get_all_results=[
+            {"id": "dead", "memory": "旧事实", "created_at": "2026-09-01T00:00:00Z",
+             "metadata": {"superseded": True, "superseded_reason": "过时"}},
+        ]
+    )
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    try:
+        items = asyncio.run(long_memory.list_memories(user_id))
+    finally:
+        long_memory._cache = original
+    assert items[0]["superseded"] is True
+    assert items[0]["category"] is None

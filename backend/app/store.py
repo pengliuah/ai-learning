@@ -753,6 +753,26 @@ def touch_housekeeping(user_id: str) -> None:
         )
 
 
+def memory_housekeeping_status(user_id: str) -> dict:
+    """整理状态一览：画像 + 水位 + 循环是否处理过该用户。"""
+    with db_conn() as conn:
+        row = conn.execute(
+            """SELECT p.profile, p.updated_at AS profile_updated_at,
+                      h.last_run_at, h.user_id IS NOT NULL AS touched
+               FROM users u
+               LEFT JOIN user_memory_profile p ON p.user_id = u.id
+               LEFT JOIN memory_housekeeping h ON h.user_id = u.id
+               WHERE u.id = %s""",
+            (user_id,),
+        ).fetchone()
+    return {
+        "profile": (row["profile"] or "").strip() if row else "",
+        "profileUpdatedAt": row["profile_updated_at"] if row else None,
+        "lastRunAt": row["last_run_at"] if row else None,
+        "touched": bool(row["touched"]) if row else False,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Token usage (per-user LLM 用量统计)
 #

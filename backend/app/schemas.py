@@ -242,6 +242,9 @@ class MemoryOut(BaseModel):
     memory: str
     createdAt: str | None = None
     updatedAt: str | None = None
+    category: str | None = None
+    importance: int | None = None
+    superseded: bool = False
 
 
 class SaveToImaRequest(BaseModel):

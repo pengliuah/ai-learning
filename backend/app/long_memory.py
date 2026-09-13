@@ -385,7 +385,7 @@ def _touch_memories(mem, items: list[dict]) -> None:
 
 
 def _sync_recall(mem, user_id: str, query: str, limit: int) -> list[dict]:
-    """同步检索 + 重排 + 命中反馈，供 to_thread 调用。"""
+    """同步检索 + 重排，供 to_thread 调用（不含命中反馈——那要走后台）。"""
     now = datetime.now(timezone.utc)
     result = mem.search(query, top_k=RECALL_POOL, filters={"user_id": user_id})
     items = []
@@ -397,15 +397,15 @@ def _sync_recall(mem, user_id: str, query: str, limit: int) -> list[dict]:
             continue  # 被整理任务标记过时的旧事实不再参与召回
         items.append(it)
     items.sort(key=lambda it: _item_rank_key(it, now), reverse=True)
-    picked = items[:limit]
-    _touch_memories(mem, picked)
-    return picked
+    return items[:limit]
 
 
 async def recall(user_id: str, query: str, limit: int = RECALL_LIMIT) -> str:
     """检索该用户的长期记忆，返回注入教练提示词的文本块；无记忆/未启用/失败返回 ""。
 
     结构：有学生画像时先给画像段落，再给重排后的 "• 事实" 列表。
+    命中反馈（access_count 写回）走后台任务——mem0 的 update 即使只改元数据
+    也会重新调一次 embedding，不能让它阻塞教练的首 token。
     任何异常都吞掉并只打日志 —— 记忆检索绝不能让教练对话失败。
     """
     if not user_id or not query.strip():
@@ -418,12 +418,15 @@ async def recall(user_id: str, query: str, limit: int = RECALL_LIMIT) -> str:
             return ""
         picked = await asyncio.to_thread(_sync_recall, mem, user_id, query.strip(), limit)
         lines = [f"• {it['memory'].strip()}" for it in picked if it.get("memory")]
-        if not lines:
-            return ""
-        profile = await asyncio.to_thread(store.get_memory_profile, user_id)
-        if profile:
-            lines.insert(0, f"【学生画像】{profile}")
-        logger.info("long_memory: recalled %d item(s) (user=%s)", len(picked), user_id)
+        if lines:
+            # 命中反馈 fire-and-forget（复用 _background 强引用集）
+            task = asyncio.create_task(asyncio.to_thread(_touch_memories, mem, picked))
+            _background.add(task)
+            task.add_done_callback(_background.discard)
+            profile = await asyncio.to_thread(store.get_memory_profile, user_id)
+            if profile:
+                lines.insert(0, f"【学生画像】{profile}")
+            logger.info("long_memory: recalled %d item(s) (user=%s)", len(picked), user_id)
         return "\n".join(lines)
     except Exception as exc:
         logger.warning("long_memory.recall failed (user=%s): %s", user_id, exc)
@@ -645,6 +648,12 @@ async def update_memory_text(user_id: str, memory_id: str, text: str) -> bool:
             if str(existing.get("user_id") or "") != str(user_id):
                 return False
             mem.update(memory_id, text=text)
+            # 正文变了, 原分类/重要性可能不再贴切: 顺路重标注一次
+            try:
+                label = classify_facts(mem, [text])[0]
+                mem.update(memory_id, metadata=dict(label))
+            except Exception as exc:
+                logger.debug("long_memory: 编辑后重标注失败 id=%s: %s", memory_id, exc)
             return True
 
         ok = await asyncio.to_thread(_owned_update)
@@ -900,7 +909,11 @@ async def consolidate_user(user_id: str) -> dict:
             return _apply_housekeeping_ops(mem, live, parse_housekeeping(raw or ""))
 
         stats.update(await asyncio.to_thread(_run))
-        stats["profile"] = bool(await refresh_profile(user_id))
+        # 用户手动修正过画像时 refresh_profile 会跳过重写, 这里如实标记 False
+        if store.is_profile_edited_by_user(user_id):
+            stats["profile"] = False
+        else:
+            stats["profile"] = bool(await refresh_profile(user_id))
         logger.info("long_memory: 整理完成 (user=%s) %s", user_id, stats)
         return stats
     except Exception as exc:

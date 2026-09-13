@@ -658,10 +658,20 @@ class LearningCoach:
         return self._chat_agents[user_id]
 
     async def _build_coach_messages(
-        self, goal: str, history: list[ChatTurn] | None, user_id: str
-    ) -> list:
+        self,
+        goal: str,
+        history: list[ChatTurn] | None,
+        user_id: str,
+        prev_summary: str | None = None,
+        summarized_count: int = 0,
+    ) -> tuple[list, dict | None]:
         """Assemble one coach turn's messages: trimmed/compressed prior turns
-        (temporary memory) followed by the new user goal."""
+        (temporary memory) followed by the new user goal.
+
+        滚动摘要: 客户端带回上一轮的摘要与其覆盖条数, 本轮只把新滑出窗口的
+        片段并入摘要。返回 ``(messages, summary_payload)``——payload 非空时
+        由调用方通过 SSE ``summary`` 事件回传客户端持久化。
+        """
         turns = history or []
 
         # 剪裁: single trim pass -- the recent verbatim window plus the older
@@ -671,13 +681,29 @@ class LearningCoach:
         # 压缩: condense the dropped prefix into a short LLM summary so their
         # gist survives; fall back to a one-line note on failure.
         summary: str | None = None
+        summary_payload: dict | None = None
         if memory.ENABLE_SUMMARIZATION and dropped:
+            covered = max(0, summarized_count)
+            new_turns = dropped[covered:]
             try:
-                summary = await memory.summarize_turns(build_chat_model(user_id), dropped)
-                logger.info("coach_stream: summarized %d dropped turns", len(dropped))
+                if prev_summary and not new_turns:
+                    # 摘要已覆盖全部被裁剪片段, 无需重算
+                    summary = prev_summary
+                else:
+                    base = prev_summary if (prev_summary and covered > 0) else None
+                    summary = await memory.summarize_turns(
+                        build_chat_model(user_id), new_turns or dropped,
+                        previous_summary=base,
+                    )
+                    summary_payload = {"summary": summary, "count": len(dropped)}
+                logger.info(
+                    "coach_stream: summarized turns (dropped=%d covered=%d new=%d%s)",
+                    len(dropped), covered, len(new_turns),
+                    ", merged" if base else "",
+                )
             except Exception as exc:
                 logger.warning("coach_stream: summary failed, using note: %s", exc)
-                summary = None
+                summary = prev_summary  # 旧摘要仍可用于提示词
 
         messages = memory.build_messages_from(kept, dropped, summary)
         # 长期记忆: 用本轮 goal 检索该用户的跨会话事实, 注入最前 (失败返回空串)
@@ -691,10 +717,17 @@ class LearningCoach:
             )))
         messages.append(HumanMessage(content=goal))
         _log_llm_messages("coach", messages)
-        return messages
+        return messages, summary_payload
 
 
-    async def coach_stream(self, goal: str, history: list[ChatTurn] | None = None, user_id: str = "") -> AsyncIterator[tuple[str, object]]:
+    async def coach_stream(
+        self,
+        goal: str,
+        history: list[ChatTurn] | None = None,
+        user_id: str = "",
+        prev_summary: str | None = None,
+        summarized_count: int = 0,
+    ) -> AsyncIterator[tuple[str, object]]:
         """Run the chat agent: a normal conversation that calls create_plan /
         search_plans only when the LLM detects a clear intent."""
         # 存档意图快通道: 规则命中就不进模型, 也不做记忆检索, 直接发存档卡片
@@ -705,7 +738,12 @@ class LearningCoach:
             return
 
         agent = self._build_chat_agent(user_id)
-        messages = await self._build_coach_messages(goal, history, user_id)
+        messages, summary_payload = await self._build_coach_messages(
+            goal, history, user_id, prev_summary, summarized_count,
+        )
+        # 滚动摘要: 把更新后的摘要回传客户端持久化 (下一轮带回来, 只做增量合并)
+        if summary_payload:
+            yield ("summary", summary_payload)
         logger.info("coach_stream: goal=%s history=%d", goal[:100], len(history or []))
         # 一次对话可能触发多轮模型调用 (工具循环), 把每轮 usage chunk 累加,
         # 无论流是否正常结束都在 finally 里落库。

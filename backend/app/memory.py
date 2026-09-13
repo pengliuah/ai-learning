@@ -50,6 +50,17 @@ _SUMMARY_SYSTEM = (
     "直接输出摘要正文，不要添加解释。"
 )
 
+# 滚动摘要: 已有摘要 + 新滑出窗口的片段 → 合并后的完整摘要。
+# 每轮只让 LLM 处理新片段, 避免对整段旧对话反复全量重算。
+_SUMMARY_MERGE_SYSTEM = (
+    "你是对话记忆压缩助手。下面是这段辅导对话的「已有摘要」，"
+    "以及最近滑出上下文窗口的「新增对话片段」。"
+    "请把片段中的新信息（关键事实、目标变化、新结论、新待办）合并进摘要，"
+    "输出更新后的完整摘要：已有内容保持不变（除非被片段明确更新），新信息按主题并入。"
+    "保留关键事实、用户目标、已讨论的结论与尚未完成的事项，省略寒暄和重复内容。"
+    "直接输出摘要正文，不要添加解释。"
+)
+
 
 def _message_text(content: object) -> str:
     """Robustly extract plain text from an AIMessage ``content`` field."""
@@ -160,19 +171,35 @@ def build_messages(history: list[ChatTurn], summary: str | None = None) -> list:
     return build_messages_from(kept, dropped, summary)
 
 
-async def summarize_turns(model: BaseChatModel, dropped: list[tuple[str, str]]) -> str:
-    """Compress trimmed turns into a short summary via the LLM."""
+async def summarize_turns(
+    model: BaseChatModel,
+    dropped: list[tuple[str, str]],
+    previous_summary: str | None = None,
+) -> str:
+    """Compress trimmed turns into a short summary via the LLM.
+
+    传入 ``previous_summary`` 时走滚动合并模式: 只让 LLM 把新滑出的片段
+    并入已有摘要, 输入输出都只有增量, 不再对整段旧对话全量重算。
+    """
     transcript = _to_transcript(dropped)
     if len(transcript) > MAX_SUMMARY_INPUT_CHARS:
         transcript = transcript[:MAX_SUMMARY_INPUT_CHARS] + "……"
 
-    if logger.isEnabledFor(logging.DEBUG):
-        logger.debug("llm_request memory payload:\n[system] %s\n[human] %s", _SUMMARY_SYSTEM, transcript)
+    prev = (previous_summary or "").strip()
+    if prev:
+        system = _SUMMARY_MERGE_SYSTEM
+        user = f"[已有摘要]\n{prev}\n\n[新增对话片段]\n{transcript}"
     else:
-        logger.info("llm_request memory: chars=%d (设置 LOG_LEVEL=DEBUG 可见全文)", len(transcript))
+        system = _SUMMARY_SYSTEM
+        user = transcript
+
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug("llm_request memory payload:\n[system] %s\n[human] %s", system, user)
+    else:
+        logger.info("llm_request memory: chars=%d (设置 LOG_LEVEL=DEBUG 可见全文)", len(user))
 
     response = await model.ainvoke(
-        [SystemMessage(content=_SUMMARY_SYSTEM), HumanMessage(content=transcript)]
+        [SystemMessage(content=system), HumanMessage(content=user)]
     )
     text = _message_text(response.content).strip()
     if len(text) > MAX_SUMMARY_CHARS:

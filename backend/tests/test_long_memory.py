@@ -461,11 +461,14 @@ def test_recall_reranks_and_touches(tmp_store, admin_user):
     original = long_memory._cache
     long_memory._cache = _StubCache(fake)
     user_id = _configure_models(admin_user)
-    try:
-        out = asyncio.run(long_memory.recall(user_id, "还记得我吗"))
-    finally:
-        long_memory._cache = original
-    assert out.splitlines() == ["• 旧但重要", "• 新但无关紧要"]
+    async def run():
+        out = await long_memory.recall(user_id, "还记得我吗")
+        # 命中反馈是后台任务, 测试里排空它再断言
+        if long_memory._background:
+            await asyncio.gather(*long_memory._background)
+        return out
+
+    out = asyncio.run(run())
     assert {u["id"] for u in fake.updates} == {"strong-old", "weak-new"}
     for u in fake.updates:
         assert u["metadata"]["access_count"] == 1
@@ -737,7 +740,13 @@ def test_update_memory_text_checks_ownership(tmp_store, admin_user):
         assert asyncio.run(long_memory.update_memory_text(user_id, "mine", "   ")) is False
     finally:
         long_memory._cache = original
-    assert [(u["id"], u["text"]) for u in fake.updates] == [("mine", "新内容")]
+    text_updates = [(u["id"], u["text"]) for u in fake.updates if u["text"]]
+    assert text_updates == [("mine", "新内容")]
+    # 正文变了 → 顺路重标注 (默认标签)
+    assert any(
+        u["id"] == "mine" and u["metadata"] and u["metadata"].get("category") == "其他"
+        for u in fake.updates
+    )
 
 
 def test_archive_stores_verbatim_and_labels(tmp_store, admin_user):

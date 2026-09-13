@@ -40,7 +40,7 @@ def test_build_coach_messages_keeps_short_history_verbatim(monkeypatch):
         turn("user", "你好"),
         turn("assistant", "你好！有什么想学的？"),
     ]
-    messages = run(coach._build_coach_messages("什么是闭包？", history, "u1"))
+    messages, _ = run(coach._build_coach_messages("什么是闭包？", history, "u1"))
     assert [m.content for m in messages] == [
         "你好",
         "你好！有什么想学的？",
@@ -55,7 +55,7 @@ def test_build_coach_messages_compresses_long_history(monkeypatch):
     monkeypatch.setattr(memory_mod, "ENABLE_SUMMARIZATION", True)
     monkeypatch.setattr(agent_mod, "build_chat_model", lambda *a, **kw: SimpleNamespace())
 
-    async def fake_summary(model, dropped):
+    async def fake_summary(model, dropped, previous_summary=None):
         return "之前聊了 Python 装饰器的学习计划"
 
     monkeypatch.setattr(memory_mod, "summarize_turns", fake_summary)
@@ -66,7 +66,7 @@ def test_build_coach_messages_compresses_long_history(monkeypatch):
         turn("user", "第一模块学什么？"),
         turn("assistant", "先理解闭包与高阶函数。"),
     ]
-    messages = run(coach._build_coach_messages("继续", history, "u1"))
+    messages, _ = run(coach._build_coach_messages("继续", history, "u1"))
 
     texts = [m.content for m in messages]
     assert "更早对话摘要" in texts[0]
@@ -91,7 +91,7 @@ def test_build_coach_messages_summary_failure_falls_back_to_note(monkeypatch):
         turn("user", "u1"),
         turn("assistant", "a1"),
     ]
-    messages = run(coach._build_coach_messages("u2", history, "u1"))
+    messages, _ = run(coach._build_coach_messages("u2", history, "u1"))
     texts = [m.content for m in messages]
     assert "记忆说明" in texts[0]
     assert texts[-1] == "u2"
@@ -100,5 +100,5 @@ def test_build_coach_messages_summary_failure_falls_back_to_note(monkeypatch):
 def test_build_coach_messages_empty_history_is_just_goal(monkeypatch):
     monkeypatch.setattr(memory_mod, "ENABLE_SUMMARIZATION", False)
     coach = LearningCoach()
-    messages = run(coach._build_coach_messages("你好", None, "u1"))
+    messages, _ = run(coach._build_coach_messages("你好", None, "u1"))
     assert [m.content for m in messages] == ["你好"]

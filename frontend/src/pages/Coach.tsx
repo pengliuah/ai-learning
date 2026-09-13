@@ -43,6 +43,32 @@ function storageKey(userId: string | undefined) {
   return userId ? `zhixue_coach_messages_${userId}` : "zhixue_coach_messages_anonymous";
 }
 
+function summaryKey(userId: string | undefined) {
+  return userId ? `zhixue_coach_summary_${userId}` : "zhixue_coach_summary_anonymous";
+}
+
+interface SummaryState {
+  summary: string;
+  count: number;
+}
+
+function loadSummary(userId: string | undefined): SummaryState {
+  try {
+    const raw = localStorage.getItem(summaryKey(userId));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.summary === "string") return { summary: parsed.summary, count: parsed.count || 0 };
+    }
+  } catch {}
+  return { summary: "", count: 0 };
+}
+
+function saveSummary(userId: string | undefined, st: SummaryState) {
+  try {
+    localStorage.setItem(summaryKey(userId), JSON.stringify(st));
+  } catch {}
+}
+
 function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -311,6 +337,12 @@ export function Coach() {
   // Auto-send a prefilled goal from ?goal= query param.
   const [searchParams, setSearchParams] = useSearchParams();
   const autoSent = useRef(false);
+  const [summaryState, setSummaryState] = useState<SummaryState>(() =>
+    loadSummary(user?.id),
+  );
+  useEffect(() => {
+    saveSummary(user?.id, summaryState);
+  }, [summaryState, user?.id]);
   useEffect(() => {
     const goal = searchParams.get("goal");
     if (goal && !autoSent.current) {
@@ -405,6 +437,10 @@ export function Coach() {
             }),
           );
         },
+        (data) => setSummaryState({ summary: data.summary, count: data.count }),
+        summaryState.summary || summaryState.count
+          ? { summary: summaryState.summary, count: summaryState.count }
+          : undefined,
       );
     } catch (e) {
       setMessages((prev) =>
@@ -431,7 +467,10 @@ export function Coach() {
         <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI 教练</h1>
         <button
           onClick={() => {
-            if (confirm("清除所有聊天历史？")) setMessages([]);
+            if (confirm("清除所有聊天历史？")) {
+              setMessages([]);
+              setSummaryState({ summary: "", count: 0 });
+            }
           }}
           disabled={streaming || messages.length === 0}
           className="ml-auto inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"

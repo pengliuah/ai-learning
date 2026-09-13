@@ -965,7 +965,10 @@ async def coach_stream(req: CoachRequest, user: dict = Depends(get_current_user)
 
     async def event_stream():
         try:
-            async for kind, payload in coach.coach_stream(req.goal, req.history, str(user["id"])):
+            async for kind, payload in coach.coach_stream(
+                req.goal, req.history, str(user["id"]),
+                prev_summary=req.summary, summarized_count=req.summarizedCount or 0,
+            ):
                 yield _sse(kind, payload)
             yield _sse("done", {"ok": True})
         except Exception as exc:

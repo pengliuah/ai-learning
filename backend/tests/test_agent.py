@@ -361,3 +361,64 @@ def test_coach_stream_archive_intent_fast_path(tmp_store, admin_user, monkeypatc
 
     out2 = asyncio.run(run2())
     assert not [p for k, p in out2 if k == "tool"]  # 长消息不触发存档卡片
+
+
+class _FakeSummaryModel:
+    """捕获 ainvoke 调用的假聊天模型 (滚动摘要用)。"""
+
+    def __init__(self):
+        self.calls = []
+
+    async def ainvoke(self, messages):
+        self.calls.append(messages)
+
+        class _R:
+            content = "合并后摘要"
+
+        return _R()
+
+
+def test_coach_stream_rolling_summary_merges_incrementally(tmp_store, admin_user, monkeypatch):
+    """滚动摘要: 只把「新滑出窗口的片段」并入已有摘要, 并通过 summary 事件回传。"""
+    from app.schemas import ChatTurn
+
+    user_id = str(admin_user["id"])
+    model = _FakeSummaryModel()
+    monkeypatch.setattr(agent_mod, "build_chat_model", lambda uid, **kw: model)
+
+    class _EmptyAgent:
+        def astream_events(self, *a, **k):
+            async def gen():
+                return
+                yield
+            return gen()
+
+    c = LearningCoach()
+    monkeypatch.setattr(c, "_build_chat_agent", lambda uid: _EmptyAgent())
+
+    history = [
+        ChatTurn(role="user" if i % 2 == 0 else "assistant", content=f"msg{i}")
+        for i in range(20)
+    ]
+    # 上轮摘要已覆盖 2 条被裁剪片段 → 本轮只合并新滑出的 2 条
+    prev_count = 2
+
+    async def run():
+        out = []
+        async for kind, payload in c.coach_stream(
+            "继续", history=history, user_id=user_id,
+            prev_summary="旧摘要", summarized_count=prev_count,
+        ):
+            out.append((kind, payload))
+        return out
+
+    out = asyncio.run(run())
+    summ = [p for k, p in out if k == "summary"]
+    expected_count = len(history) - 16  # trim 后被裁掉的总数
+    assert summ and summ[0]["summary"] == "合并后摘要"
+    assert summ[0]["count"] == expected_count
+    # 增量提示词: 包含已有摘要与新片段, 而不是整段旧对话
+    user_content = model.calls[0][1].content
+    assert "旧摘要" in user_content
+    assert "msg2" in user_content  # 新滑出的片段
+    assert "msg0" not in user_content or "已有摘要" in user_content

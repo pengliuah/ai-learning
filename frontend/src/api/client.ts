@@ -475,12 +475,19 @@ export const api = {
     history: ChatTurn[],
     onDelta: (text: string) => void,
     onTool: (data: { phase: string; name: string; output?: string }) => void,
+    onSummary?: (data: { summary: string; count: number }) => void,
+    prev?: { summary: string; count: number },
   ): Promise<void> => {
     const doFetch = () =>
       fetch(`${API_BASE}/coach/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ goal, history }),
+        body: JSON.stringify({
+          goal,
+          history,
+          summary: prev?.summary || undefined,
+          summarizedCount: prev?.count || undefined,
+        }),
       });
     let res = await doFetch();
     if (res.status === 401) {
@@ -515,6 +522,7 @@ export const api = {
         const data = JSON.parse(dataStr);
         if (eventType === "delta") onDelta(data.text);
         else if (eventType === "tool") onTool(data);
+        else if (eventType === "summary") onSummary?.(data);
         else if (eventType === "error") errMsg = data.detail;
       }
     }

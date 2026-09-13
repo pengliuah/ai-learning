@@ -163,6 +163,10 @@ class CoachRequest(BaseModel):
     # Temporary conversation memory: prior turns of the current chat, newest
     # last. The backend trims/compresses this before injecting it as context.
     history: list[ChatTurn] = Field(default_factory=list)
+    # 滚动摘要 (短期记忆): 客户端持久化上一轮返回的摘要与其覆盖的消息条数,
+    # 每轮带回来做增量合并, 避免整段旧对话全量重算。
+    summary: str | None = None
+    summarizedCount: int | None = None
 # ---------------------------------------------------------------------------
 # App settings (IMA credentials + skill prompt, regeneration strategy)
 # ---------------------------------------------------------------------------

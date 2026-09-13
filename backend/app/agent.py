@@ -195,8 +195,18 @@ GRADER_SYSTEM = (
     + MATH_NOTATION
 )
 
-COACH_SYSTEM = (
-    "你是一名学习教练助手，与用户进行自然的学习对话：解答概念、提供学习建议、鼓励和引导用户。\n"
+# 存档意图: 用户短消息里出现 存档/保存/记住/收藏 → 直接发存档卡片,
+# 不调模型 (模型对无参工具的调用不稳定, 这种窄意图用规则 100% 命中)。
+_ARCHIVE_INTENT_RE = re.compile(r"存档|保存|记住|收藏")
+
+
+def _is_archive_intent(goal: str) -> bool:
+    g = goal.strip()
+    # 长消息里出现"保存"多半是顺带一提, 只有短指令才视为存档意图
+    return 0 < len(g) <= 30 and bool(_ARCHIVE_INTENT_RE.search(g))
+
+
+COACH_SYSTEM = (    "你是一名学习教练助手，与用户进行自然的学习对话：解答概念、提供学习建议、鼓励和引导用户。\n"
     "你有三个工具，只在用户明确表达对应意图时才调用，日常闲聊与知识问答不要调用工具：\n"
     "- create_plan：用户明确想要制定/生成一份学习计划时调用，传入学习主题；调用后前端会展示「制定计划」按钮并跳转到新建页预填主题。\n"
     "- search_plans：用户想要查找/看看已有的学习计划时调用，传入搜索关键词（可为空表示全部）。"
@@ -687,6 +697,13 @@ class LearningCoach:
     async def coach_stream(self, goal: str, history: list[ChatTurn] | None = None, user_id: str = "") -> AsyncIterator[tuple[str, object]]:
         """Run the chat agent: a normal conversation that calls create_plan /
         search_plans only when the LLM detects a clear intent."""
+        # 存档意图快通道: 规则命中就不进模型, 也不做记忆检索, 直接发存档卡片
+        if _is_archive_intent(goal):
+            logger.info("coach_stream: 存档意图命中, 直接发卡片 (goal=%s)", goal[:50])
+            yield ("tool", {"phase": "start", "name": "archive_content"})
+            yield ("tool", {"phase": "end", "name": "archive_content", "output": "{}"})
+            return
+
         agent = self._build_chat_agent(user_id)
         messages = await self._build_coach_messages(goal, history, user_id)
         logger.info("coach_stream: goal=%s history=%d", goal[:100], len(history or []))

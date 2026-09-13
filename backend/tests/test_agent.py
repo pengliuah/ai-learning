@@ -323,3 +323,41 @@ def test_coach_stream_create_plan_synthesizes_end_from_args(tmp_store, admin_use
     end = [p for k, p in out if k == "tool" and p["phase"] == "end"]
     assert len(end) == 1
     assert json.loads(end[0]["output"]) == {"topic": "Python 装饰器"}
+
+
+def test_coach_stream_archive_intent_fast_path(tmp_store, admin_user, monkeypatch):
+    """「保存内容/记住这些」类短指令: 不调模型, 直接发存档卡片事件。"""
+    called = {"agent": False}
+
+    def _fail(uid):
+        called["agent"] = True
+        raise RuntimeError("不应构建 agent")
+
+    c = LearningCoach()
+    monkeypatch.setattr(c, "_build_chat_agent", _fail)
+
+    async def run():
+        out = []
+        async for kind, payload in c.coach_stream("保存内容", history=[], user_id=str(admin_user["id"])):
+            out.append((kind, payload))
+        return out
+
+    out = asyncio.run(run())
+    tools = [p for k, p in out if k == "tool"]
+    assert [(t["phase"], t["name"]) for t in tools] == [("start", "archive_content"), ("end", "archive_content")]
+    assert called["agent"] is False
+    # 其他消息不影响: 长文本里的"保存"不触发
+    events2 = [{"event": "on_chat_model_stream", "data": {"chunk": _FakeChunk("好")}}]
+    monkeypatch.setattr(c, "_build_chat_agent", lambda uid: _FakeStreamAgent(events2))
+
+    async def run2():
+        out = []
+        async for kind, payload in c.coach_stream(
+            "我想把这个学习资料保存到电脑桌面，具体步骤是怎样的？要非常详细的说明。",
+            history=[], user_id=str(admin_user["id"]),
+        ):
+            out.append((kind, payload))
+        return out
+
+    out2 = asyncio.run(run2())
+    assert not [p for k, p in out2 if k == "tool"]  # 长消息不触发存档卡片

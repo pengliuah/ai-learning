@@ -20,6 +20,8 @@ interface ToolEvent {
   phase: "start" | "end";
   data?: { topic?: string; content?: string } | PlanListItem[];
   note?: string;
+  archiveResult?: "memory" | "ima" | "failed";
+  archiveError?: string;
 }
 
 interface Message {
@@ -85,8 +87,18 @@ function coalesceSearchTools(tools: ToolEvent[]): ToolEvent[] {
 
 /** 聊天存档卡片：模型识别到「存档/保存/记住」意图后出现。
  *  内容 = 上一条回复的原文（不经过模型整理），宽度贴近对话列，完整展示。 */
-function ArchiveCard({ content }: { content: string }) {
-  const [state, setState] = useState<"idle" | "saving" | "memory" | "ima">("idle");
+function ArchiveCard({
+  content,
+  result,
+  onResult,
+}: {
+  content: string;
+  result?: ToolEvent["archiveResult"];
+  onResult?: (result: Exclude<ToolEvent["archiveResult"], undefined>, detail?: string) => void;
+}) {
+  const [state, setState] = useState<"idle" | "saving" | "memory" | "ima" | "failed">(
+    result === "memory" ? "memory" : result === "ima" ? "ima" : "idle",
+  );
   const [error, setError] = useState("");
   if (!content.trim()) {
     return (
@@ -103,9 +115,12 @@ function ArchiveCard({ content }: { content: string }) {
       if (target === "memory") await api.archiveToMemory(content);
       else await api.archiveToIma(content);
       setState(target);
+      onResult?.(target);
     } catch (e) {
-      setError((e as Error).message || "保存失败");
-      setState("idle");
+      const detail = (e as Error).message || "保存失败";
+      setError(detail);
+      setState("failed");
+      onResult?.("failed", detail);
     }
   };
 
@@ -125,6 +140,7 @@ function ArchiveCard({ content }: { content: string }) {
       </div>
     );
   }
+  const failed = state === "failed";
   return (
     <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-900/30">
       <p className="mb-3 whitespace-pre-wrap break-words text-sm leading-6 text-gray-800 dark:text-gray-100">
@@ -153,7 +169,12 @@ function ArchiveCard({ content }: { content: string }) {
             保存中...
           </span>
         )}
-        {error && <span className="inline-flex items-center text-xs text-red-500">{error}</span>}
+        {(error || failed) && (
+          <span className="inline-flex items-center text-xs text-red-500">
+            {failed && "保存失败，可重试；"}
+            {error}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -163,10 +184,16 @@ function ToolCard({
   tool,
   navigate,
   archiveContent = "",
+  archiveResult,
+  archiveError,
+  onArchiveResult,
 }: {
   tool: ToolEvent;
   navigate: ReturnType<typeof useNavigate>;
   archiveContent?: string;
+  archiveResult?: ToolEvent["archiveResult"];
+  archiveError?: string;
+  onArchiveResult?: (result: Exclude<ToolEvent["archiveResult"], undefined>, detail?: string) => void;
 }) {
   const label = TOOL_LABELS[tool.name] || tool.name;
   if (tool.phase === "start") {
@@ -178,7 +205,13 @@ function ToolCard({
     );
   }
   if (tool.name === "archive_content") {
-    return <ArchiveCard content={archiveContent} />;
+    return (
+      <ArchiveCard
+        content={archiveContent}
+        result={archiveResult}
+        onResult={onArchiveResult}
+      />
+    );
   }
   if (tool.name === "create_plan" && tool.data && typeof tool.data === "object" && !Array.isArray(tool.data)) {
     const d = tool.data as { topic?: string };
@@ -297,6 +330,24 @@ export function Coach() {
       // clipboard 不可用时仍填入输入框，方便再次发送
       setInput(m.content);
     }
+  };
+
+  // 把存档结果写回对应消息的工具条目 (随 localStorage 持久化, 刷新后仍是完成/失败态)
+  const updateToolState = (
+    messageId: string,
+    toolRef: ToolEvent,
+    patch: Partial<ToolEvent>,
+  ) => {
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === messageId
+          ? {
+              ...msg,
+              tools: (msg.tools || []).map((t) => (t === toolRef ? { ...t, ...patch } : t)),
+            }
+          : msg,
+      ),
+    );
   };
 
   const handleSend = async (text?: string) => {
@@ -471,6 +522,11 @@ export function Coach() {
                         tool={t}
                         navigate={navigate}
                         archiveContent={previousAssistantContent(messages, m)}
+                        archiveResult={t.archiveResult}
+                        archiveError={t.archiveError}
+                        onArchiveResult={(result, detail) =>
+                          updateToolState(m.id, t, { archiveResult: result, archiveError: detail })
+                        }
                       />
                     ))}
                   </div>

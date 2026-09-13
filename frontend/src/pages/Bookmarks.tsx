@@ -94,6 +94,7 @@ export function Bookmarks() {
   const [memoryOpen, setMemoryOpen] = useState(true);
   const [bookmarksOpen, setBookmarksOpen] = useState(true);
   const [memorySearch, setMemorySearch] = useState("");
+  const [visibleCount, setVisibleCount] = useState(10);
   const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
   const [memoryDraft, setMemoryDraft] = useState("");
   const [profileEditing, setProfileEditing] = useState(false);
@@ -295,7 +296,10 @@ export function Bookmarks() {
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                   <input
                     value={memorySearch}
-                    onChange={(e) => setMemorySearch(e.target.value)}
+                    onChange={(e) => {
+                      setMemorySearch(e.target.value);
+                      setVisibleCount(10);
+                    }}
                     placeholder={`在 ${memories.length} 条记忆中搜索...`}
                     className="w-full rounded-md border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                   />
@@ -307,7 +311,7 @@ export function Bookmarks() {
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {filteredMemories.map((m) =>
+                    {filteredMemories.slice(0, visibleCount).map((m) =>
                       editingMemoryId === m.id ? (
                         <div
                           key={m.id}
@@ -381,6 +385,14 @@ export function Bookmarks() {
                           </button>
                         </div>
                       ),
+                    )}
+                    {filteredMemories.length > visibleCount && (
+                      <button
+                        onClick={() => setVisibleCount((c) => c + 10)}
+                        className="w-full rounded-lg border border-dashed border-gray-300 py-2.5 text-sm text-gray-500 hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-600 dark:text-gray-400 dark:hover:border-indigo-600 dark:hover:text-indigo-400"
+                      >
+                        加载更多（还有 {filteredMemories.length - visibleCount} 条）
+                      </button>
                     )}
                   </div>
                 )}

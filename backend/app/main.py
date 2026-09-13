@@ -47,6 +47,8 @@ from .schemas import (
     ImaSettingsUpdate,
     LoginRequest,
     MemoryOut,
+    MemoryProfileUpdate,
+    MemoryUpdate,
     MemorySettings,
     MemorySettingsUpdate,
     ModelSettings,
@@ -1137,6 +1139,50 @@ async def consolidate_memories(user: dict = Depends(get_current_user)):
     stats = await long_memory.consolidate_user(uid)
     await asyncio.to_thread(store.touch_housekeeping, uid)
     return stats
+
+
+@app.get("/api/memories/profile")
+async def get_memory_profile(user: dict = Depends(get_current_user)):
+    """获取当前用户的学生画像（长期记忆的摘要层，展示在记忆页可被修改）。"""
+    uid = str(user["id"])
+    st = await asyncio.to_thread(store.memory_housekeeping_status, uid)
+    return {
+        "profile": st["profile"],
+        "updatedAt": st["profileUpdatedAt"],
+        "editedByUser": st["profileEditedByUser"],
+    }
+
+
+@app.put("/api/memories/profile")
+async def put_memory_profile(req: MemoryProfileUpdate, user: dict = Depends(get_current_user)):
+    """修改当前用户的学生画像。
+
+    用户手动修正后 ``edited_by_user=true``，夜间整理不再自动覆盖
+    （画像以用户的版本为准，之后仍可继续手动编辑）。
+    """
+    uid = str(user["id"])
+    await asyncio.to_thread(store.save_memory_profile, uid, req.profile, True)
+    logger.info("memory_profile: 用户修改画像 (user=%s, %d chars)", user["username"], len(req.profile))
+    st = await asyncio.to_thread(store.memory_housekeeping_status, uid)
+    return {"profile": st["profile"], "updatedAt": st["profileUpdatedAt"], "editedByUser": True}
+
+
+@app.put("/api/memories/{memory_id}")
+async def edit_memory(memory_id: str, req: MemoryUpdate, user: dict = Depends(get_current_user)):
+    """修改一条属于当前用户的长期记忆正文。
+
+    修改后重新向量化，元数据（分类/重要性/时间）保留。
+    返回:
+        200 ``{"updated": "<id>"}``
+
+    错误:
+        - 404: 记忆不存在或不属于当前用户（含模型未配置无法访问）。
+    """
+    uid = str(user["id"])
+    ok = await long_memory.update_memory_text(uid, memory_id, req.memory)
+    if not ok:
+        raise HTTPException(status_code=404, detail="记忆不存在或不属于当前用户")
+    return {"updated": memory_id}
 
 
 @app.delete("/api/memories/{memory_id}")

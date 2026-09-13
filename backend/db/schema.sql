@@ -282,9 +282,10 @@ CREATE TRIGGER user_memory_settings_set_updated_at
 -- 画像不是向量，直接存普通表。
 -- ---------------------------------------------------------------------------
 CREATE TABLE user_memory_profile (
-    user_id    UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    profile    TEXT NOT NULL DEFAULT '',
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    user_id         UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    profile         TEXT NOT NULL DEFAULT '',
+    edited_by_user  BOOLEAN NOT NULL DEFAULT false,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE TRIGGER user_memory_profile_set_updated_at
     BEFORE UPDATE ON user_memory_profile

@@ -236,6 +236,16 @@ class MemorySettingsUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class MemoryUpdate(BaseModel):
+    """PUT /api/memories/{memory_id} request body."""
+    memory: str
+
+
+class MemoryProfileUpdate(BaseModel):
+    """PUT /api/memories/profile request body."""
+    profile: str
+
+
 class MemoryOut(BaseModel):
     """单条长期记忆（Mem0 事实）。"""
     id: str

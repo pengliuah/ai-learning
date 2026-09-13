@@ -307,6 +307,13 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
     # 首页计划列表手动排序：加列并对存量数据一次性回填（按 created_at）。
     # 回填只作用于「全部计划仍是默认 0」的用户，避免覆盖已拖拽过的顺序。
     conn.execute("ALTER TABLE plans ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0")
+
+    # 学生画像允许用户手动修正: 修正后夜间整理不再覆盖
+    if conn.execute("SELECT to_regclass('public.user_memory_profile')").fetchone()[0]:
+        conn.execute(
+            "ALTER TABLE user_memory_profile ADD COLUMN IF NOT EXISTS "
+            "edited_by_user BOOLEAN NOT NULL DEFAULT false"
+        )
     conn.execute(
         """UPDATE plans p SET sort_order = o.pos
            FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at, id) - 1 AS pos

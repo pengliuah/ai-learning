@@ -240,6 +240,16 @@ export interface MemoryItem {
   memory: string;
   createdAt: string | null;
   updatedAt: string | null;
+  category?: string | null;
+  importance?: number | null;
+  superseded?: boolean;
+}
+
+// 学生画像（长期记忆摘要层，GET/PUT /api/memories/profile）
+export interface MemoryProfile {
+  profile: string;
+  updatedAt: string | null;
+  editedByUser: boolean;
 }
 
 export interface MemorySettings {

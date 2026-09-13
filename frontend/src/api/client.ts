@@ -1,4 +1,4 @@
-import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary, Annotation, BookmarkItem, MemoryItem, MemorySettings, MemorySettingsUpdate, SaveToImaRequest, SaveToImaResponse, User, AuthResponse, AdminUserCreateInput } from "./types";
+import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary, Annotation, BookmarkItem, MemoryItem, MemoryProfile, MemorySettings, MemorySettingsUpdate, SaveToImaRequest, SaveToImaResponse, User, AuthResponse, AdminUserCreateInput } from "./types";
 
 /**
  * 后端 API 基址。
@@ -284,11 +284,27 @@ export const api = {
   // 书签列表：当前用户跨计划/模块的全部书签
   listBookmarks: () => json<BookmarkItem[]>(`/annotations`),
 
-  // 长期记忆（Mem0）：列表 / 删除 / 总开关
+  // 长期记忆（Mem0）：列表 / 编辑 / 删除 / 总开关 / 学生画像
   listMemories: () => json<MemoryItem[]>(`/memories`),
+
+  updateMemory: (memoryId: string, memory: string) =>
+    json<{ updated: string }>(`/memories/${memoryId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ memory }),
+    }),
 
   deleteMemory: (memoryId: string) =>
     json<{ deleted: string }>(`/memories/${memoryId}`, { method: "DELETE" }),
+
+  getMemoryProfile: () => json<MemoryProfile>(`/memories/profile`),
+
+  updateMemoryProfile: (profile: string) =>
+    json<MemoryProfile>(`/memories/profile`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile }),
+    }),
 
   getMemorySettings: () => json<MemorySettings>("/settings/memory"),
 

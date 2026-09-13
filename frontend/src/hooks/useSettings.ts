@@ -12,6 +12,7 @@ export const SETTINGS_KEYS = {
 
 export const MEMORY_KEYS = {
   list: ["memories"] as const,
+  profile: ["memories", "profile"] as const,
 };
 
 export function useUsageSummary() {
@@ -94,6 +95,34 @@ export function useMemories() {
   return useQuery({
     queryKey: MEMORY_KEYS.list,
     queryFn: () => api.listMemories(),
+  });
+}
+
+export function useUpdateMemory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ memoryId, memory }: { memoryId: string; memory: string }) =>
+      api.updateMemory(memoryId, memory),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: MEMORY_KEYS.list });
+    },
+  });
+}
+
+export function useMemoryProfile() {
+  return useQuery({
+    queryKey: MEMORY_KEYS.profile,
+    queryFn: () => api.getMemoryProfile(),
+  });
+}
+
+export function useUpdateMemoryProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (profile: string) => api.updateMemoryProfile(profile),
+    onSuccess: (data) => {
+      qc.setQueryData(MEMORY_KEYS.profile, data);
+    },
   });
 }
 

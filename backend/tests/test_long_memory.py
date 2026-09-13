@@ -681,3 +681,60 @@ def test_list_memories_carries_curation_metadata(tmp_store, admin_user):
         long_memory._cache = original
     assert items[0]["superseded"] is True
     assert items[0]["category"] is None
+
+
+def test_refresh_profile_skips_when_user_edited(tmp_store, admin_user):
+    """用户手动修正过画像后, 自动刷新不再覆盖 (用户修正优先)。"""
+    user_id = _configure_models(admin_user)
+    store.save_memory_profile(user_id, "用户自己写的画像", edited_by_user=True)
+    fake = _FakeMemory(
+        get_all_results=[
+            {"id": "m1", "memory": "学生喜欢天文", "created_at": "2026-09-01T00:00:00Z", "metadata": {}}
+        ],
+        llm_responses=["自动生成的画像"],
+    )
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    try:
+        out = asyncio.run(long_memory.refresh_profile(user_id))
+    finally:
+        long_memory._cache = original
+    assert out == "用户自己写的画像"
+    assert fake.llm.calls == []  # 没有调用 LLM 重写
+    assert store.get_memory_profile(user_id) == "用户自己写的画像"
+
+
+def test_auto_refresh_does_not_clear_user_edit_flag(tmp_store, admin_user):
+    user_id = _configure_models(admin_user)
+    store.save_memory_profile(user_id, "手动版", edited_by_user=True)
+    store.save_memory_profile(user_id, "自动版")  # 夜间整理 (edited_by_user=False)
+    assert store.is_profile_edited_by_user(user_id) is True
+    assert store.get_memory_profile(user_id) == "自动版"  # 内容更新了
+    # 但下一次刷新仍会被跳过, 用户的修正意图保留
+    fake = _FakeMemory(get_all_results=[], llm_responses=["x"])
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    try:
+        assert asyncio.run(long_memory.refresh_profile(user_id)) == "自动版"
+    finally:
+        long_memory._cache = original
+    assert fake.llm.calls == []
+
+
+def test_update_memory_text_checks_ownership(tmp_store, admin_user):
+    user_id = _configure_models(admin_user)
+    fake = _FakeMemory(
+        get_map={
+            "mine": {"id": "mine", "memory": "旧", "user_id": user_id},
+            "theirs": {"id": "theirs", "memory": "旧", "user_id": "other"},
+        }
+    )
+    original = long_memory._cache
+    long_memory._cache = _StubCache(fake)
+    try:
+        assert asyncio.run(long_memory.update_memory_text(user_id, "mine", "新内容")) is True
+        assert asyncio.run(long_memory.update_memory_text(user_id, "theirs", "改别人的")) is False
+        assert asyncio.run(long_memory.update_memory_text(user_id, "mine", "   ")) is False
+    finally:
+        long_memory._cache = original
+    assert [(u["id"], u["text"]) for u in fake.updates] == [("mine", "新内容")]

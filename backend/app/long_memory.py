@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 COLLECTION_PREFIX = "zhixue_memory"
 MAX_CACHED_INSTANCES = 8
 RECALL_LIMIT = 5
-LIST_LIMIT = 100
+LIST_LIMIT = 500
 
 # --- 自动整理参数 -----------------------------------------------------------
 RECALL_POOL = 20          # 召回候选池: 向量检索取这么多条, 再本地重排选 top N
@@ -63,7 +63,8 @@ HOUSEKEEPING_MAX_USERS = 50  # 每轮最多处理的用户数
 
 CUSTOM_INSTRUCTIONS = (
     "只记录与学生学习相关、值得跨会话记住的事实（年级/学科/薄弱知识点/学习偏好/目标约定），"
-    "用中文、以第三人称的「学生」来表述，每条一句话；"
+    "用中文、以第三人称的「学生」来表述；每条一到两句话，"
+    "保留关键细节（具体数字、名称、时间、程度、原因），不要为了精简而丢信息；"
     "一次性寒暄、当天心情/天气、与学习无关的闲聊不要记录，只保留之后辅导还用得上的信息；"
     "忽略密码、身份证号等敏感信息；对话中没有值得长期记住的内容就返回空列表。"
 )
@@ -623,6 +624,40 @@ async def delete_memory(user_id: str, memory_id: str) -> bool:
         return False
 
 
+async def update_memory_text(user_id: str, memory_id: str, text: str) -> bool:
+    """用户编辑一条属于自己的长期记忆的正文。
+
+    mem0 的 update 会保留 payload 元数据并重新 embedding；归属校验同删除。
+    """
+    memory_id = (memory_id or "").strip()
+    text = (text or "").strip()
+    if not user_id or not memory_id or not text:
+        return False
+    try:
+        mem = _get_instance(user_id)
+        if mem is None:
+            return False
+
+        def _owned_update() -> bool:
+            existing = mem.get(memory_id)
+            if not existing:
+                return False
+            if str(existing.get("user_id") or "") != str(user_id):
+                return False
+            mem.update(memory_id, text=text)
+            return True
+
+        ok = await asyncio.to_thread(_owned_update)
+        if ok:
+            logger.info("long_memory: memory edited (user=%s, id=%s, %d chars)",
+                        user_id, memory_id, len(text))
+        return ok
+    except Exception as exc:
+        logger.warning("long_memory.update_memory_text failed (user=%s, id=%s): %s",
+                       user_id, memory_id, exc)
+        return False
+
+
 def remember_background(user_id: str, goal: str, reply: str) -> None:
     """在事件循环里创建后台写入任务（fire-and-forget），立即返回。
 
@@ -644,19 +679,31 @@ def remember_background(user_id: str, goal: str, reply: str) -> None:
 # ---------------------------------------------------------------------------
 
 _PROFILE_SYSTEM = (
-    "你是学习记忆整理助手。根据下面的事实清单，写一段学生画像，"
-    "帮助学生教练快速了解这位学生。\n"
-    "要求：中文；按「学习偏好 / 知识水平 / 学习目标 / 个人背景」归类成简短要点；"
-    "只使用清单里的事实，不要编造；事实相互矛盾时以更晚发生的为准；"
-    f"总长度不超过 {MAX_PROFILE_CHARS} 字；直接输出画像正文，不要解释。"
+    "你是学习记忆整理助手。根据下面的事实清单，为学生教练整理一份「学生画像」，"
+    "这份画像会展示给学生本人并允许其修改，所以要写得清晰、好读、好改。\n"
+    "要求：\n"
+    "- 中文；先用一句话概括这位学生，再用「小标题 + 要点列表」组织；\n"
+    "- 小标题按内容自然划分（如 学习偏好 / 知识水平 / 目标与进展 / 个人背景），"
+    "有什么写什么，不必凑齐固定模板；\n"
+    "- 每个要点保留具体细节（数字、名称、时间、程度），一行一条，方便逐条修改；\n"
+    "- 只使用清单里的事实，不要编造；事实冲突时以更晚发生的为准，"
+    "并在该要点末尾标注（YYYY-MM 更新）；\n"
+    f"- 总长度不超过 {MAX_PROFILE_CHARS} 字；直接输出画像正文，不要解释。"
 )
 
 
 async def refresh_profile(user_id: str) -> str:
-    """重建学生画像并存库，返回画像文本；未启用/无记忆/失败返回空串。"""
+    """重建学生画像并存库，返回画像文本；未启用/无记忆/失败返回空串。
+
+    用户在记忆页手动修改过画像 (edited_by_user=true) 时跳过自动刷新——
+    用户的修正优先于夜间整理。
+    """
     if not user_id or not store.is_memory_enabled(user_id):
         return ""
     try:
+        if store.is_profile_edited_by_user(user_id):
+            logger.info("long_memory: 画像被用户手动修改过, 跳过自动刷新 (user=%s)", user_id)
+            return (await asyncio.to_thread(store.get_memory_profile, user_id)) or ""
         mem = _get_instance(user_id)
         if mem is None:
             return ""

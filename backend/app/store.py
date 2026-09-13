@@ -708,14 +708,31 @@ def get_memory_profile(user_id: str) -> str:
     return (row["profile"] or "").strip() if row else ""
 
 
-def save_memory_profile(user_id: str, profile: str) -> None:
-    """写入/更新学生画像（夜间整理与画像重建共用）。"""
+def is_profile_edited_by_user(user_id: str) -> bool:
+    """用户是否在记忆页手动修改过画像（修改后夜间整理不再覆盖）。"""
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT edited_by_user FROM user_memory_profile WHERE user_id = %s",
+            (user_id,),
+        ).fetchone()
+    return bool(row and row["edited_by_user"])
+
+
+def save_memory_profile(user_id: str, profile: str, edited_by_user: bool = False) -> None:
+    """写入/更新学生画像。
+
+    edited_by_user 标记这条画像是否出自用户之手（用户改过就不再被夜间
+    整理覆盖）；自动刷新写入 False 时不会清除已有的用户修改标记。
+    """
     with db_conn() as conn:
         conn.execute(
-            """INSERT INTO user_memory_profile (user_id, profile) VALUES (%s, %s)
+            """INSERT INTO user_memory_profile (user_id, profile, edited_by_user)
+               VALUES (%s, %s, %s)
                ON CONFLICT (user_id)
-               DO UPDATE SET profile = EXCLUDED.profile, updated_at = now()""",
-            (user_id, (profile or "").strip()),
+               DO UPDATE SET profile = EXCLUDED.profile,
+                             edited_by_user = user_memory_profile.edited_by_user OR EXCLUDED.edited_by_user,
+                             updated_at = now()""",
+            (user_id, (profile or "").strip(), edited_by_user),
         )
 
 
@@ -758,6 +775,7 @@ def memory_housekeeping_status(user_id: str) -> dict:
     with db_conn() as conn:
         row = conn.execute(
             """SELECT p.profile, p.updated_at AS profile_updated_at,
+                      p.edited_by_user,
                       h.last_run_at, h.user_id IS NOT NULL AS touched
                FROM users u
                LEFT JOIN user_memory_profile p ON p.user_id = u.id
@@ -768,6 +786,7 @@ def memory_housekeeping_status(user_id: str) -> dict:
     return {
         "profile": (row["profile"] or "").strip() if row else "",
         "profileUpdatedAt": row["profile_updated_at"] if row else None,
+        "profileEditedByUser": bool(row["edited_by_user"]) if row else False,
         "lastRunAt": row["last_run_at"] if row else None,
         "touched": bool(row["touched"]) if row else False,
     }

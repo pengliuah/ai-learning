@@ -47,6 +47,16 @@ function uid() {
 
 /** 同一条回复里模型可能换关键词连续调用 search_plans，每次都渲染一张卡会堆满屏幕。
  *  收敛成一张：保留最后一次的结果，被合并的次数放进提示文案。 */
+/** 存档内容 = 当前消息之前最近一条有正文的助手回复（原样，不经整理）。 */
+function previousAssistantContent(messages: Message[], current: Message): string {
+  const idx = messages.indexOf(current);
+  for (let i = idx - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "assistant" && m.content.trim()) return m.content;
+  }
+  return "";
+}
+
 function coalesceSearchTools(tools: ToolEvent[]): ToolEvent[] {
   const ends = tools
     .map((t, i) => ({ t, i }))
@@ -73,13 +83,18 @@ function coalesceSearchTools(tools: ToolEvent[]): ToolEvent[] {
   return [...merged.values()];
 }
 
-/** 聊天存档卡片：模型识别到「存档/保存/记住」意图后出现，
- *  两个按钮分别把内容写入长期记忆 / IMA 笔记，写入后卡片定格为完成态。 */
-function ArchiveCard({ tool }: { tool: ToolEvent }) {
+/** 聊天存档卡片：模型识别到「存档/保存/记住」意图后出现。
+ *  内容 = 上一条回复的原文（不经过模型整理），宽度贴近对话列，完整展示。 */
+function ArchiveCard({ content }: { content: string }) {
   const [state, setState] = useState<"idle" | "saving" | "memory" | "ima">("idle");
   const [error, setError] = useState("");
-  const content = tool.data && !Array.isArray(tool.data) ? tool.data.content || "" : "";
-  if (!content) return null;
+  if (!content.trim()) {
+    return (
+      <div className="rounded-lg border border-dashed border-gray-300 px-4 py-3 text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
+        没有找到可存档的上一条回复
+      </div>
+    );
+  }
 
   const run = async (target: "memory" | "ima") => {
     setState("saving");
@@ -111,38 +126,48 @@ function ArchiveCard({ tool }: { tool: ToolEvent }) {
     );
   }
   return (
-    <div className="w-72 max-w-full rounded-lg border border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-800 dark:bg-indigo-900/30">
-      <p className="mb-2 line-clamp-3 text-xs leading-5 text-indigo-700 dark:text-indigo-300">
-        存档内容：{content}
+    <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-900/30">
+      <p className="mb-3 whitespace-pre-wrap break-words text-sm leading-6 text-gray-800 dark:text-gray-100">
+        {content}
       </p>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-3">
         <button
           onClick={() => run("memory")}
           disabled={state === "saving"}
-          className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-60 dark:bg-indigo-500 dark:hover:bg-indigo-600"
+          className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60 dark:bg-indigo-500 dark:hover:bg-indigo-600"
         >
-          <Brain className="h-3 w-3" />
+          <Brain className="h-4 w-4" />
           保存到长期记忆
         </button>
         <button
           onClick={() => run("ima")}
           disabled={state === "saving"}
-          className="inline-flex items-center gap-1 rounded-md border border-indigo-300 px-2.5 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 disabled:opacity-60 dark:border-indigo-600 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
+          className="inline-flex items-center gap-1.5 rounded-md border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-100 disabled:opacity-60 dark:border-indigo-600 dark:bg-transparent dark:text-indigo-300 dark:hover:bg-indigo-900/40"
         >
-          <Bookmark className="h-3 w-3" />
+          <Bookmark className="h-4 w-4" />
           保存到 IMA
         </button>
+        {state === "saving" && (
+          <span className="inline-flex items-center text-xs text-indigo-400">
+            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+            保存中...
+          </span>
+        )}
+        {error && <span className="inline-flex items-center text-xs text-red-500">{error}</span>}
       </div>
-      {(state === "saving" || error) && (
-        <p className={`mt-1.5 text-xs ${error ? "text-red-500" : "text-indigo-400"}`}>
-          {error || "保存中..."}
-        </p>
-      )}
     </div>
   );
 }
 
-function ToolCard({ tool, navigate }: { tool: ToolEvent; navigate: ReturnType<typeof useNavigate> }) {
+function ToolCard({
+  tool,
+  navigate,
+  archiveContent = "",
+}: {
+  tool: ToolEvent;
+  navigate: ReturnType<typeof useNavigate>;
+  archiveContent?: string;
+}) {
   const label = TOOL_LABELS[tool.name] || tool.name;
   if (tool.phase === "start") {
     return (
@@ -153,7 +178,7 @@ function ToolCard({ tool, navigate }: { tool: ToolEvent; navigate: ReturnType<ty
     );
   }
   if (tool.name === "archive_content") {
-    return <ArchiveCard tool={tool} />;
+    return <ArchiveCard content={archiveContent} />;
   }
   if (tool.name === "create_plan" && tool.data && typeof tool.data === "object" && !Array.isArray(tool.data)) {
     const d = tool.data as { topic?: string };
@@ -441,7 +466,12 @@ export function Coach() {
                 {m.tools && m.tools.length > 0 && (
                   <div className="mt-2 space-y-2">
                     {coalesceSearchTools(m.tools).map((t, i) => (
-                      <ToolCard key={i} tool={t} navigate={navigate} />
+                      <ToolCard
+                        key={i}
+                        tool={t}
+                        navigate={navigate}
+                        archiveContent={previousAssistantContent(messages, m)}
+                      />
                     ))}
                   </div>
                 )}

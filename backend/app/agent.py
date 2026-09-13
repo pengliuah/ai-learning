@@ -203,7 +203,8 @@ COACH_SYSTEM = (
     "尽量一次调用就查全：把相关主题合并成宽泛关键词，或传空字符串列出全部；"
     "确实需要换关键词补搜时最多再调 1 次，不要为每个主题各搜一遍。\n"
     "- archive_content：用户说「存档以上内容」「保存内容」「记住这些」等，"
-    "想把前面的内容保存下来时调用，把要存档的内容整理成完整文本传入；"
+    "想把前面的内容保存下来时调用；无需任何参数、无需整理内容，"
+    "前端会自动把上一条回复的原文交给用户选择保存；"
     "调用后前端会出现「保存到 IMA」「保存到长期记忆」两个按钮，你只需简短确认，不要重复执行保存。\n"
     "调用工具后，根据返回结果用自然语言向用户说明。"
     "输出语言与用户输入语言保持一致。"
@@ -635,13 +636,9 @@ class LearningCoach:
                 )
 
             @tool
-            def archive_content(content: str) -> str:
-                """当用户说「存档以上内容」「保存内容」「记住这些」等，想保存前面的对话或讲解内容时调用。把要存档的内容完整整理后放入 content。
-
-                Args:
-                    content: 要存档的内容，保留关键细节的完整文本。
-                """
-                return json.dumps({"content": content}, ensure_ascii=False)
+            def archive_content() -> str:
+                """当用户说「存档以上内容」「保存内容」「记住这些」等，想保存前面的对话内容时调用。不需要任何参数，前端会自动保存上一条回复的原文。"""
+                return json.dumps({"ok": True}, ensure_ascii=False)
 
             self._chat_agents[user_id] = create_agent(
                 model=build_streaming_model(user_id),

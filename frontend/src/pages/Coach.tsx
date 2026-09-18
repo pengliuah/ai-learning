@@ -22,6 +22,7 @@ interface ToolEvent {
   note?: string;
   archiveResult?: "memory" | "ima" | "failed";
   archiveError?: string;
+  dismissed?: boolean;
 }
 
 interface Message {
@@ -117,10 +118,12 @@ function ArchiveCard({
   content,
   result,
   onResult,
+  onDismiss,
 }: {
   content: string;
   result?: ToolEvent["archiveResult"];
   onResult?: (result: Exclude<ToolEvent["archiveResult"], undefined>, detail?: string) => void;
+  onDismiss?: () => void;
 }) {
   const [state, setState] = useState<"idle" | "saving" | "memory" | "ima" | "failed">(
     result === "memory" ? "memory" : result === "ima" ? "ima" : "idle",
@@ -169,9 +172,19 @@ function ArchiveCard({
   const failed = state === "failed";
   return (
     <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-900/30">
-      <p className="mb-3 whitespace-pre-wrap break-words text-sm leading-6 text-gray-800 dark:text-gray-100">
-        {content}
-      </p>
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm leading-6 text-gray-800 dark:text-gray-100">
+          {content}
+        </p>
+        <button
+          onClick={onDismiss}
+          aria-label="取消存档"
+          title="取消存档"
+          className="shrink-0 rounded p-1 text-gray-400 hover:bg-indigo-100 hover:text-gray-600 dark:hover:bg-indigo-900/40 dark:hover:text-gray-300"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
       <div className="flex flex-wrap gap-3">
         <button
           onClick={() => run("memory")}
@@ -213,6 +226,7 @@ function ToolCard({
   archiveResult,
   archiveError,
   onArchiveResult,
+  onDismiss,
 }: {
   tool: ToolEvent;
   navigate: ReturnType<typeof useNavigate>;
@@ -220,6 +234,7 @@ function ToolCard({
   archiveResult?: ToolEvent["archiveResult"];
   archiveError?: string;
   onArchiveResult?: (result: Exclude<ToolEvent["archiveResult"], undefined>, detail?: string) => void;
+  onDismiss?: () => void;
 }) {
   const label = TOOL_LABELS[tool.name] || tool.name;
   if (tool.phase === "start") {
@@ -231,11 +246,13 @@ function ToolCard({
     );
   }
   if (tool.name === "archive_content") {
+    if (tool.dismissed) return null;
     return (
       <ArchiveCard
         content={archiveContent}
         result={archiveResult}
         onResult={onArchiveResult}
+        onDismiss={onDismiss}
       />
     );
   }
@@ -566,6 +583,7 @@ export function Coach() {
                         onArchiveResult={(result, detail) =>
                           updateToolState(m.id, t, { archiveResult: result, archiveError: detail })
                         }
+                        onDismiss={() => updateToolState(m.id, t, { dismissed: true })}
                       />
                     ))}
                   </div>

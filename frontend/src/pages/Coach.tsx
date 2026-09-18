@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Send, Loader2, AlertCircle, ArrowRight, ClipboardList,
-  Search, Trash2, Copy, Check, Bookmark, Brain,
+  Search, Trash2, Copy, Check, Bookmark, Brain, X,
 } from "lucide-react";
 import { Markdown } from "../components/Markdown";
 import { api } from "../api/client";

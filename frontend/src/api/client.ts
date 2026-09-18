@@ -304,12 +304,16 @@ export const api = {
       body: JSON.stringify({ content }),
     }),
 
-  archiveToIma: (content: string, title?: string) =>
-    json<SaveToImaResponse>(`/ima/archive`, {
+  archiveToIma: async (content: string, title?: string) => {
+    const res = await json<SaveToImaResponse>(`/ima/archive`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content, title }),
-    }),
+    });
+    // 业务失败 (如凭证未配置) 也是 200 + ok:false, 必须显式抛错
+    if (!res.ok) throw new Error(res.detail || "保存到 IMA 失败");
+    return res;
+  },
 
   getMemoryProfile: () => json<MemoryProfile>(`/memories/profile`),
 

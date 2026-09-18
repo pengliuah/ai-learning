@@ -427,3 +427,37 @@ def test_annotation_cross_user_isolation(client, seeded_doc, normal_user):
         json={"note": "越权"}, headers=auth_headers(normal_user),
     )
     assert r.status_code == 404
+
+
+def test_ima_archive_unconfigured_returns_ok_false(client):
+    """未配置 IMA 凭证: 200 + ok:false + 明确 detail (前端显式抛错展示)。"""
+    r = client.post("/api/ima/archive", json={"content": "聊天内容"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False
+    assert "IMA" in body["detail"]
+
+
+def test_ima_archive_blank_title_gets_default(client, monkeypatch):
+    """空标题回退到默认「聊天存档 …」; 路由体引用的 datetime/_CST 必须可用
+    (重构曾漏导入导致 NameError→500)。"""
+    import app.api.ima as ima_mod
+
+    captured = {}
+
+    def _fake_import(client_id, api_key, content, title="", folder_name=""):
+        captured["title"] = title
+        return {"note_id": "n1", "raw": {}}
+
+    monkeypatch.setattr(ima_mod.ima, "import_note", _fake_import)
+    monkeypatch.setattr(
+        ima_mod.store,
+        "get_ima_settings_row",
+        lambda uid: {"ima_client_id": "cid", "ima_api_key": "key"},
+    )
+    r = client.post("/api/ima/archive", json={"content": "内容"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["noteId"] == "n1"
+    assert captured["title"].startswith("聊天存档 ")

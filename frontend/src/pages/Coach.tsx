@@ -77,13 +77,24 @@ function uid() {
 /** 同一条回复里模型可能换关键词连续调用 search_plans，每次都渲染一张卡会堆满屏幕。
  *  收敛成一张：保留最后一次的结果，被合并的次数放进提示文案。 */
 /** 存档内容 = 当前消息之前最近一条有正文的助手回复（原样，不经整理）。 */
-function previousAssistantContent(messages: Message[], current: Message): string {
+/** 存档候选: 当前消息之前所有有正文的教练回复, 新的在前, 最多 5 条。
+ *  默认选中最近一条"有分量"的 (>=120 字), 跳过"好的/要不要我…"这类短确认/反问——
+ *  机械取"上一条"会存进反问句而不是用户要的内容。 */
+const ARCHIVE_MIN_SUBSTANTIVE = 120;
+
+function assistantReplyCandidates(messages: Message[], current: Message): string[] {
   const idx = messages.indexOf(current);
-  for (let i = idx - 1; i >= 0; i--) {
+  const out: string[] = [];
+  for (let i = idx - 1; i >= 0 && out.length < 5; i--) {
     const m = messages[i];
-    if (m.role === "assistant" && m.content.trim()) return m.content;
+    if (m.role === "assistant" && m.content.trim()) out.push(m.content);
   }
-  return "";
+  return out;
+}
+
+function defaultArchivePick(candidates: string[]): number {
+  const i = candidates.findIndex((c) => c.length >= ARCHIVE_MIN_SUBSTANTIVE);
+  return i === -1 ? 0 : i;
 }
 
 function coalesceSearchTools(tools: ToolEvent[]): ToolEvent[] {
@@ -115,12 +126,12 @@ function coalesceSearchTools(tools: ToolEvent[]): ToolEvent[] {
 /** 聊天存档卡片：模型识别到「存档/保存/记住」意图后出现。
  *  内容 = 上一条回复的原文（不经过模型整理），宽度贴近对话列，完整展示。 */
 function ArchiveCard({
-  content,
+  candidates,
   result,
   onResult,
   onDismiss,
 }: {
-  content: string;
+  candidates: string[];
   result?: ToolEvent["archiveResult"];
   onResult?: (result: Exclude<ToolEvent["archiveResult"], undefined>, detail?: string) => void;
   onDismiss?: () => void;
@@ -129,10 +140,12 @@ function ArchiveCard({
     result === "memory" ? "memory" : result === "ima" ? "ima" : "idle",
   );
   const [error, setError] = useState("");
+  const [pick, setPick] = useState(() => defaultArchivePick(candidates));
+  const content = candidates[pick] ?? "";
   if (!content.trim()) {
     return (
       <div className="rounded-lg border border-dashed border-gray-300 px-4 py-3 text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
-        没有找到可存档的上一条回复
+        没有找到可存档的教练回复
       </div>
     );
   }
@@ -173,9 +186,27 @@ function ArchiveCard({
   return (
     <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-900/30">
       <div className="mb-2 flex items-start justify-between gap-2">
-        <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm leading-6 text-gray-800 dark:text-gray-100">
-          {content}
-        </p>
+        <div className="min-w-0 flex-1">
+          {candidates.length > 1 && state === "idle" && (
+            <select
+              value={pick}
+              onChange={(e) => setPick(Number(e.target.value))}
+              aria-label="选择要存档的回复"
+              className="mb-2 w-full max-w-full rounded-md border border-indigo-200 bg-white px-2 py-1 text-xs text-gray-600 dark:border-indigo-700 dark:bg-gray-800 dark:text-gray-300"
+            >
+              {candidates.map((c, i) => (
+                <option key={i} value={i}>
+                  {i === pick ? "✓ " : ""}
+                  {c.replace(/\s+/g, " ").slice(0, 40)}
+                  {c.length > 40 ? "…" : ""}
+                </option>
+              ))}
+            </select>
+          )}
+          <p className="whitespace-pre-wrap break-words text-sm leading-6 text-gray-800 dark:text-gray-100">
+            {content}
+          </p>
+        </div>
         <button
           onClick={onDismiss}
           aria-label="取消存档"
@@ -197,7 +228,7 @@ function ArchiveCard({
         <button
           onClick={() => run("ima")}
           disabled={state === "saving"}
-          className="inline-flex items-center gap-1.5 rounded-md border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-100 disabled:opacity-60 dark:border-indigo-600 dark:bg-transparent dark:text-indigo-300 dark:hover:bg-indigo-900/40"
+          className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60 dark:bg-indigo-500 dark:hover:bg-indigo-600"
         >
           <Bookmark className="h-4 w-4" />
           保存到 IMA
@@ -222,7 +253,7 @@ function ArchiveCard({
 function ToolCard({
   tool,
   navigate,
-  archiveContent = "",
+  archiveCandidates = [],
   archiveResult,
   archiveError,
   onArchiveResult,
@@ -230,7 +261,7 @@ function ToolCard({
 }: {
   tool: ToolEvent;
   navigate: ReturnType<typeof useNavigate>;
-  archiveContent?: string;
+  archiveCandidates?: string[];
   archiveResult?: ToolEvent["archiveResult"];
   archiveError?: string;
   onArchiveResult?: (result: Exclude<ToolEvent["archiveResult"], undefined>, detail?: string) => void;
@@ -249,7 +280,7 @@ function ToolCard({
     if (tool.dismissed) return null;
     return (
       <ArchiveCard
-        content={archiveContent}
+        candidates={archiveCandidates}
         result={archiveResult}
         onResult={onArchiveResult}
         onDismiss={onDismiss}
@@ -577,7 +608,7 @@ export function Coach() {
                         key={i}
                         tool={t}
                         navigate={navigate}
-                        archiveContent={previousAssistantContent(messages, m)}
+                        archiveCandidates={assistantReplyCandidates(messages, m)}
                         archiveResult={t.archiveResult}
                         archiveError={t.archiveError}
                         onArchiveResult={(result, detail) =>

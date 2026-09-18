@@ -161,8 +161,19 @@ async def refresh_profile(user_id: str) -> str:
                 and not (it.get("metadata") or {}).get("superseded")
             ]
             if not facts:
-                store.save_memory_profile(user_id, "")
-                return ""
+                # 关键防御: 不把已有画像清空。事实暂时读不到最常见的原因是
+                # 向量模型配置/维度变化导致实例指向了另一张空的分表——
+                # 老记忆还在旧表里, 此时清空画像会显得"画像丢失/数据被删"。
+                # 保留现状并告警, 等配置恢复后下一轮整理会自然重建。
+                existing = store.get_memory_profile(user_id)
+                if existing:
+                    logger.warning(
+                        "long_memory: 整理时读不到任何有效事实, 保留已有画像不清空 "
+                        "(user=%s, 现有画像 %d 字)——请检查向量模型配置是否变化",
+                        user_id, len(existing),
+                    )
+                return existing
+
             listing = "\n".join(f"- {t}" for t in facts[:200])
             profile = (mem.llm.generate_response(
                 [
@@ -170,6 +181,9 @@ async def refresh_profile(user_id: str) -> str:
                     {"role": "user", "content": listing},
                 ]
             ) or "").strip()
+            if not profile:
+                # LLM 返回空也不覆盖旧画像
+                return store.get_memory_profile(user_id) or ""
             profile = profile[:MAX_PROFILE_CHARS]
             store.save_memory_profile(user_id, profile)
             return profile
@@ -218,12 +232,17 @@ def parse_housekeeping(raw: str) -> dict:
 
 
 def _apply_housekeeping_ops(mem, live_items: list[dict], ops: dict) -> dict:
-    """把整理操作应用到向量库，返回实际生效的条数。非法编号/失败的单条跳过。"""
+    """把整理操作应用到向量库，返回实际生效的条数。非法编号/失败的单条跳过。
+
+    操作上限随事实数收敛 (最多标掉一半): 防止 LLM 输出失控把全部
+    事实一轮标记过时, 造成"记忆清空/画像丢失"的假象。
+    """
     id_by_idx = {str(i): it.get("id") for i, it in enumerate(live_items) if it.get("id")}
+    op_cap = max(1, min(MAX_HOUSEKEEPING_OPS, len(live_items) // 2))
     merged_texts: list[tuple[str, str]] = []  # (memory_id, merged_text) 待重新标注
     merged = superseded = 0
 
-    for op in ops.get("merges")[:MAX_HOUSEKEEPING_OPS]:
+    for op in ops.get("merges")[:op_cap]:
         keep = id_by_idx.get(str(op.get("keep_id")))
         drops = [
             id_by_idx[str(d)]
@@ -242,7 +261,7 @@ def _apply_housekeeping_ops(mem, live_items: list[dict], ops: dict) -> dict:
         except Exception as exc:
             logger.warning("long_memory: 合并失败 (keep=%s): %s", keep, exc)
 
-    for op in ops.get("supersede")[:MAX_HOUSEKEEPING_OPS]:
+    for op in ops.get("supersede")[:op_cap]:
         sid = id_by_idx.get(str(op.get("id")))
         if not sid:
             continue

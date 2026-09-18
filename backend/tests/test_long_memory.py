@@ -506,17 +506,55 @@ def test_refresh_profile_builds_and_saves(tmp_store, admin_user):
     assert store.get_memory_profile(user_id) == "学生喜欢天文；对宇宙感兴趣。"
 
 
-def test_refresh_profile_clears_when_no_memories(tmp_store, admin_user):
+def test_refresh_profile_keeps_profile_when_no_memories(tmp_store, admin_user):
+    """读不到事实时不清空画像 (向量集合漂移/全部过时的场景), 只告警保留现状。"""
     user_id = _configure_models(admin_user)
+    store.save_memory_profile(user_id, "之前生成的画像")
     fake = _FakeMemory(get_all_results=[], llm_responses=["不应该被调用"])
     original = memory_client._cache
     memory_client._cache = _StubCache(fake)
     try:
-        assert asyncio.run(long_memory.refresh_profile(user_id)) == ""
+        assert asyncio.run(long_memory.refresh_profile(user_id)) == "之前生成的画像"
     finally:
         memory_client._cache = original
-    assert store.get_memory_profile(user_id) == ""
+    assert store.get_memory_profile(user_id) == "之前生成的画像"
     assert fake.llm.calls == []  # 没有事实就不该调用 LLM
+
+
+def test_refresh_profile_keeps_profile_when_llm_returns_empty(tmp_store, admin_user):
+    user_id = _configure_models(admin_user)
+    store.save_memory_profile(user_id, "旧画像")
+    fake = _FakeMemory(
+        get_all_results=[
+            {"id": "m1", "memory": "学生喜欢天文", "created_at": "2026-09-01T00:00:00Z", "metadata": {}}
+        ],
+        llm_responses=["   "],  # LLM 空输出
+    )
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
+    try:
+        assert asyncio.run(long_memory.refresh_profile(user_id)) == "旧画像"
+    finally:
+        memory_client._cache = original
+    assert store.get_memory_profile(user_id) == "旧画像"
+
+
+def test_housekeeping_ops_capped_by_live_count(tmp_store, admin_user):
+    """LLM 幻觉式大规模 supersede 被上限收敛: 4 条事实一轮最多标掉 2 条。"""
+    user_id = _configure_models(admin_user)
+    live = [
+        {"id": f"m{i}", "memory": f"事实{i}", "created_at": "2026-09-01T00:00:00Z", "metadata": {}}
+        for i in range(4)
+    ]
+    fake = _FakeMemory()
+    original = memory_client._cache
+    memory_client._cache = _StubCache(fake)
+    ops = {"merges": [], "supersede": [{"id": str(i), "reason": "x"} for i in range(4)]}
+    try:
+        stats = memory_curation._apply_housekeeping_ops(fake, live, ops)
+    finally:
+        memory_client._cache = original
+    assert stats["superseded"] == 2  # 4 // 2
 
 
 def test_consolidate_user_applies_ops_and_refreshes_profile(tmp_store, admin_user):

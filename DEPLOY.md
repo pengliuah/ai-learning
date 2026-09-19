@@ -50,7 +50,7 @@ sudo vi .env
 |---|---|
 | `POSTGRES_PASSWORD` | 数据库密码。**注意**：数据库已用旧密码初始化过的话，改这里不会改库密码，需保持一致（默认 `123`） |
 | `JWT_SECRET` | JWT 签名密钥。不设则每次重启随机生成、所有用户需重新登录。**强烈建议设置**：`python3 -c "import secrets; print(secrets.token_urlsafe(48))"`（不设的话 deploy.sh 首次部署会自动生成并持久化） |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 首次启动引导管理员（仅 users 表为空时创建）。请设置强密码；登录后可在网页「账号设置」页修改 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 首次启动引导管理员（仅 users 表为空时创建），默认 **admin / admin**。登录后请立即在网页「账号设置」页修改密码 |
 | `LOG_LEVEL` | 后端日志级别，默认 INFO；`deploy.sh` 的第 1 个参数会自动改写这里（如 `deploy.sh debug`） |
 
 ## 3. 部署
@@ -59,7 +59,7 @@ sudo vi .env
 sudo bash scripts/deploy.sh
 ```
 
-完成后访问 `http://<服务器IP>/`，用引导管理员账号登录。安全组/防火墙放行 **80**。
+完成后访问 `http://<服务器IP>/`，用初始账号 **admin / admin** 登录。安全组/防火墙放行 **80**。
 
 ## 4. 部署脚本做了什么
 

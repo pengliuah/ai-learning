@@ -60,12 +60,13 @@ DEPLOY.md          部署详细说明（架构、首次准备、备份、故障�
 sudo git clone https://github.com/pengliuah/ai-learning.git /opt/ai-learning
 cd /opt/ai-learning
 sudo cp deploy.env.example .env
-sudo vi .env    # 设置 POSTGRES_PASSWORD / JWT_SECRET / ADMIN_PASSWORD
+sudo vi .env    # 设置 POSTGRES_PASSWORD / JWT_SECRET
 
 # 2. 一键部署
 sudo bash scripts/deploy.sh
 
-# 3. 访问 http://<服务器IP>/ 用 .env 里的管理员账号登录
+# 3. 访问 http://<服务器IP>/, 用初始账号 admin / admin 登录
+#    (首次启动自动创建; 登录后请立即在「账号设置」里修改密码)
 ```
 
 部署脚本每次会自动：备份数据库与附件目录 → git reset 到本分支远端最新 → 构建镜像 → 迁移数据库（幂等）→ 健康检查。**模型 API Key 不需要在服务器配置**——部署完成后每个用户登录，在网页「模型设置」页填自己的 Key（存库、加密）。

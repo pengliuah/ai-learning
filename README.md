@@ -57,8 +57,8 @@ DEPLOY.md          部署详细说明（架构、首次准备、备份、故障�
 
 ```bash
 # 1. 拉代码 & 写配置
-sudo git clone https://github.com/pengliuah/ai-learning.git /opt/zhixue
-cd /opt/zhixue
+sudo git clone https://github.com/pengliuah/ai-learning.git /opt/ai-learning
+cd /opt/ai-learning
 sudo cp deploy.env.example .env
 sudo vi .env    # 设置 POSTGRES_PASSWORD / JWT_SECRET / ADMIN_PASSWORD
 

@@ -13,6 +13,20 @@ AI 学习助手全栈系统：输入一个学习主题（或上传学习资料�
 - **模型配置**：每个用户自带大模型 / 向量模型 / 多模态模型配置（OpenAI 兼容接口，Key 加密存储），token 用量按模型类型统计
 - **移动端**：Capacitor Android 打包，与网页端同源功能
 
+## 界面预览
+
+| 登录页（3D 地球 + 银河） | 学习计划列表 |
+|---|---|
+| ![登录页](docs/screenshots/login.png) | ![学习计划](docs/screenshots/home.png) |
+
+| 计划详情与模块进度 | AI 批改与逐题回顾 |
+|---|---|
+| ![计划详情](docs/screenshots/plan-detail.png) | ![AI 批改](docs/screenshots/grade.png) |
+
+AI 教练：能记住你的学习上下文，讲解直指你正在学的技术栈。
+
+![AI 教练](docs/screenshots/coach.png)
+
 ## 技术栈
 
 | 层 | 技术 |

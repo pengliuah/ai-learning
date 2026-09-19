@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { ArrowLeft, Ban, Copy, KeyRound, Ticket, Trash2, UserPlus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useUsers, useCreateUser, useDeleteUser, useResetUserPassword } from "../hooks/useAdmin";
-import { api } from "../api/client";
+import { api, serverOrigin } from "../api/client";
 import type { Invite } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { useToast } from "../components/Toast";
@@ -44,7 +44,10 @@ function InviteSection() {
     }
   };
 
-  const inviteLink = (code: string) => `${window.location.origin}/register?code=${code}`;
+  const inviteLink = (code: string) =>
+    `${serverOrigin()}/register?code=${code}`;
+  // 注意不能用 window.location.origin: App WebView 里是 https://localhost,
+  // 复制出去的邀请链接在手机浏览器里打不开
 
   const copyLink = async (code: string) => {
     try {

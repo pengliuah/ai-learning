@@ -9,6 +9,20 @@ import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, Gra
  */
 const API_BASE = (import.meta.env.VITE_API_BASE || "/api").replace(/\/+$/, "");
 
+/**
+ * 服务器站点根地址（拼邀请链接等场景用）。
+ * - App 端: 由构建时注入的 VITE_API_BASE 推导（…/api → 去掉 /api），
+ *   WebView 里 window.location.origin 是 https://localhost, 不能用。
+ * - 网页端: VITE_API_BASE 未设置（相对 /api），用当前站点 origin。
+ */
+export function serverOrigin(): string {
+  const base = API_BASE;
+  if (/^https?:\/\//.test(base)) {
+    return base.replace(/\/api\/?$/, "").replace(/\/+$/, "");
+  }
+  return window.location.origin;
+}
+
 // ---------------------------------------------------------------------------
 // 会话存储（双 token: access JWT + refresh opaque）与 401 自动刷新
 // ---------------------------------------------------------------------------

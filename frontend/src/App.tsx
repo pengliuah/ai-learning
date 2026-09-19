@@ -17,6 +17,7 @@ import { DisplaySettings } from "./pages/DisplaySettings";
 import { Bookmarks } from "./pages/Bookmarks";
 import { Files } from "./pages/Files";
 import { Login } from "./pages/Login";
+import { Register } from "./pages/Register";
 import { AdminUsers } from "./pages/AdminUsers";
 import type { ReactNode } from "react";
 
@@ -46,6 +47,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/register" element={user ? <Navigate to="/" replace /> : <Register />} />
       <Route
         path="/"
         element={

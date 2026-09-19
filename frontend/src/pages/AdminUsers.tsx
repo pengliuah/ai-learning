@@ -1,10 +1,188 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { ArrowLeft, KeyRound, Trash2, UserPlus } from "lucide-react";
+import { ArrowLeft, Ban, Copy, KeyRound, Ticket, Trash2, UserPlus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useUsers, useCreateUser, useDeleteUser, useResetUserPassword } from "../hooks/useAdmin";
+import { api } from "../api/client";
+import type { Invite } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { useToast } from "../components/Toast";
+
+/** 邀请码管理区块: 生成码 → 复制邀请链接发给对方; 列表可作废。 */
+function InviteSection() {
+  const { toast } = useToast();
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [maxUses, setMaxUses] = useState(1);
+  const [expiresDays, setExpiresDays] = useState<number | null>(30);
+  const [note, setNote] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [lastCode, setLastCode] = useState<Invite | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setInvites(await api.listInvites());
+    } catch {
+      // 列表失败不打断页面
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const handleCreate = async () => {
+    setCreating(true);
+    try {
+      const inv = await api.createInvite({ maxUses: maxUses, expiresDays: expiresDays, note });
+      setLastCode(inv);
+      setNote("");
+      await refresh();
+    } catch (err) {
+      toast((err as Error).message || "生成失败", "error");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const inviteLink = (code: string) => `${window.location.origin}/register?code=${code}`;
+
+  const copyLink = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(inviteLink(code));
+      toast("邀请链接已复制", "success");
+    } catch {
+      toast(`复制失败，请手动复制：${inviteLink(code)}`, "error");
+    }
+  };
+
+  const handleDisable = async (id: string) => {
+    try {
+      await api.disableInvite(id);
+      await refresh();
+    } catch (err) {
+      toast((err as Error).message || "作废失败", "error");
+    }
+  };
+
+  const inviteStatus = (inv: Invite): { label: string; cls: string } => {
+    if (inv.disabled) return { label: "已作废", cls: "bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500" };
+    if (inv.usedCount >= inv.maxUses)
+      return { label: "已用尽", cls: "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400" };
+    if (inv.expiresAt && new Date(inv.expiresAt) < new Date())
+      return { label: "已过期", cls: "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400" };
+    return { label: "可用", cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300" };
+  };
+
+  return (
+    <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+      <div className="mb-3 flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+        <Ticket className="h-4 w-4" />
+        邀请码
+        <span className="ml-1 text-xs font-normal text-gray-400">
+          新用户凭邀请码在注册页自助建号
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={maxUses}
+          onChange={(e) => setMaxUses(Number(e.target.value))}
+          className="rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+          title="可用次数"
+        >
+          <option value={1}>可用 1 次</option>
+          <option value={5}>可用 5 次</option>
+          <option value={10}>可用 10 次</option>
+          <option value={50}>可用 50 次</option>
+        </select>
+        <select
+          value={expiresDays ?? ""}
+          onChange={(e) => setExpiresDays(e.target.value ? Number(e.target.value) : null)}
+          className="rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+          title="有效期"
+        >
+          <option value={7}>7 天有效</option>
+          <option value={30}>30 天有效</option>
+          <option value={90}>90 天有效</option>
+          <option value="">永久有效</option>
+        </select>
+        <input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="备注（给谁用的）"
+          maxLength={100}
+          className="min-w-40 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+        />
+        <button
+          onClick={() => void handleCreate()}
+          disabled={creating}
+          className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500 dark:hover:bg-indigo-600"
+        >
+          生成邀请码
+        </button>
+      </div>
+
+      {lastCode && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 dark:border-emerald-800 dark:bg-emerald-900/30">
+          <span className="font-mono text-base font-semibold tracking-widest text-emerald-800 dark:text-emerald-300">
+            {lastCode.code}
+          </span>
+          <button
+            onClick={() => void copyLink(lastCode.code)}
+            className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-transparent dark:text-emerald-300 dark:hover:bg-emerald-900/50"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            复制邀请链接
+          </button>
+        </div>
+      )}
+
+      {invites.length > 0 && (
+        <ul className="mt-3 divide-y divide-gray-100 dark:divide-gray-700">
+          {invites.slice(0, 10).map((inv) => {
+            const st = inviteStatus(inv);
+            return (
+              <li key={inv.id} className="flex items-center gap-3 py-2">
+                <span className="font-mono text-sm tracking-widest text-gray-800 dark:text-gray-200">
+                  {inv.code}
+                </span>
+                <span className={`rounded px-1.5 py-0.5 text-xs ${st.cls}`}>{st.label}</span>
+                <span className="text-xs text-gray-400">
+                  {inv.usedCount}/{inv.maxUses} 次
+                  {inv.expiresAt ? ` · ${new Date(inv.expiresAt).toLocaleDateString()} 前有效` : " · 永久"}
+                  {inv.note ? ` · ${inv.note}` : ""}
+                </span>
+                <div className="ml-auto flex items-center gap-1">
+                  {st.label === "可用" && (
+                    <button
+                      onClick={() => void copyLink(inv.code)}
+                      className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-indigo-600 dark:text-gray-400 dark:hover:bg-gray-700"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      复制链接
+                    </button>
+                  )}
+                  {!inv.disabled && st.label === "可用" && (
+                    <button
+                      onClick={() => void handleDisable(inv.id)}
+                      className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                    >
+                      <Ban className="h-3.5 w-3.5" />
+                      作废
+                    </button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+          {invites.length > 10 && (
+            <li className="py-2 text-xs text-gray-400">仅显示最近 10 条，共 {invites.length} 条</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export function AdminUsers() {
   const navigate = useNavigate();
@@ -116,6 +294,9 @@ export function AdminUsers() {
           </button>
         </div>
       </form>
+
+      {/* 邀请码 */}
+      <InviteSection />
 
       {/* 重置密码弹层 */}
       {resetTarget && (

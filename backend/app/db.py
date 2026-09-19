@@ -306,6 +306,24 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
             )
             logger.info("init_schema: %s table added", table)
 
+    # 邀请制注册: 邀请码表 + users.invited_by 来源追溯 (幂等)。
+    if not conn.execute("SELECT to_regclass('public.invite_codes')").fetchone()[0]:
+        conn.execute(
+            """CREATE TABLE invite_codes (
+                   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                   code       TEXT NOT NULL UNIQUE,
+                   created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                   max_uses   INTEGER NOT NULL DEFAULT 1,
+                   used_count INTEGER NOT NULL DEFAULT 0,
+                   expires_at TIMESTAMPTZ,
+                   note       TEXT NOT NULL DEFAULT '',
+                   disabled   BOOLEAN NOT NULL DEFAULT false,
+                   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+               )"""
+        )
+        logger.info("init_schema: invite_codes table added")
+    conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS invited_by UUID")
+
     # Bootstrap the admin account (users table empty → first startup).
     admin_id = conn.execute(
         "SELECT id FROM users WHERE role = 'admin' ORDER BY created_at LIMIT 1"

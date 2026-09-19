@@ -68,6 +68,7 @@ from ..schemas import (
     QuestionType,
     Quiz,
     RefreshRequest,
+    RegisterRequest,
     SaveAnswersRequest,
     SaveToImaRequest,
     SaveToImaResponse,
@@ -75,7 +76,7 @@ from ..schemas import (
 
 
 # ---------------------------------------------------------------------------
-# Auth（账号系统：用户名/邮箱 + 密码，双 token，管理员建号不开放注册）
+# Auth（账号系统：用户名/邮箱 + 密码，双 token；注册走邀请制，见 /register）
 # ---------------------------------------------------------------------------
 
 @router.post("/api/auth/login")
@@ -96,6 +97,42 @@ def auth_login(req: LoginRequest):
     user = store.get_user_by_username(req.username.strip())
     if user is None or not verify_password(req.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
+    return {
+        "access_token": create_access_token(user),
+        "refresh_token": create_refresh_token(str(user["id"])),
+        "token_type": "bearer",
+        "user": h._user_public(store.get_user(str(user["id"]))),
+    }
+
+
+@router.post("/api/auth/register")
+def auth_register(req: RegisterRequest):
+    """邀请制注册：凭有效邀请码自助建号（role=user），成功即登录。
+
+    邀请码核销是原子操作（未禁用/未过期/未用尽才自增），并发不会超发。
+    系统不开放自注册——没有有效邀请码无法创建账号。
+
+    错误:
+        400: 邀请码无效或已失效（不区分具体原因，防枚举）。
+        409: 用户名已被占用。
+    """
+    username = req.username.strip()
+    if store.get_user_by_username(username) is not None:
+        raise HTTPException(status_code=409, detail="用户名已被占用")
+    invite = store.consume_invite(req.invite_code)
+    if invite is None:
+        logger.info("register: 无效邀请码 username=%r", username)
+        raise HTTPException(status_code=400, detail="邀请码无效或已失效")
+    try:
+        user = store.create_user(
+            username, hash_password(req.password), role="user",
+            invited_by=str(invite["created_by"]) if invite["created_by"] else None,
+        )
+    except ValueError as exc:
+        # 极小概率: 核销与建号之间用户名被抢注。回滚核销不让码白扣。
+        store.rollback_invite(str(invite["id"]))
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    logger.info("register: 新用户 %r 注册成功 (邀请制)", username)
     return {
         "access_token": create_access_token(user),
         "refresh_token": create_refresh_token(str(user["id"])),

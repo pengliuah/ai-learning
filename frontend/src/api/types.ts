@@ -226,8 +226,26 @@ export interface AuthResponse {
 export interface AdminUserCreateInput {
   username: string;
   password: string;
-  role?: UserRole;
+  role?: "admin" | "user";
   email?: string | null;
+}
+
+/** 邀请码（admin 邀请制注册） */
+export interface Invite {
+  id: string;
+  code: string;
+  maxUses: number;
+  usedCount: number;
+  expiresAt?: string | null;
+  note: string;
+  disabled: boolean;
+  createdAt?: string | null;
+}
+
+export interface InviteCreateInput {
+  maxUses: number;
+  expiresDays?: number | null;
+  note?: string;
 }
 
 export interface Annotation {

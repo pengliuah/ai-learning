@@ -7,12 +7,15 @@ import type { User } from "../api/types";
 interface AuthState {
   user: User | null;
   login: (username: string, password: string) => Promise<void>;
+  /** 邀请码注册成功后直接进入登录态 */
+  register: (username: string, password: string, inviteCode: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState>({
   user: null,
   login: async () => {},
+  register: async () => {},
   logout: async () => {},
 });
 
@@ -35,13 +38,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [queryClient],
   );
 
+  const register = useCallback(
+    async (username: string, password: string, inviteCode: string) => {
+      await api.register(username, password, inviteCode);
+      setUser(getStoredUser());
+      queryClient.clear();
+    },
+    [queryClient],
+  );
+
   const logout = useCallback(async () => {
     await api.logout();
     setUser(null);
     queryClient.clear();
   }, [queryClient]);
 
-  const value = useMemo(() => ({ user, login, logout }), [user, login, logout]);
+  const value = useMemo(() => ({ user, login, register, logout }), [user, login, register, logout]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

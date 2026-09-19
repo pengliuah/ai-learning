@@ -40,6 +40,7 @@ CREATE TABLE users (
                   CHECK (role IN ('admin', 'user')),
     wechat_unionid TEXT UNIQUE,
     wechat_openid  TEXT,
+    invited_by     UUID,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -381,3 +382,22 @@ CREATE TRIGGER attachments_set_updated_at
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE INDEX idx_attachments_user ON attachments (user_id, created_at);
 CREATE INDEX idx_attachments_user_sha ON attachments (user_id, sha256);
+
+-- ---------------------------------------------------------------------------
+-- invite_codes  -  邀请制注册的邀请码
+--
+-- 管理员生成, 新人在 /register 页凭码自助注册（系统不开放自注册, 码是门票）。
+-- max_uses/used_count 原子核销防并发超发; disabled 为手动作废。
+-- users.invited_by 记录码创建者, 预留将来"老用户邀请"扩展。
+-- ---------------------------------------------------------------------------
+CREATE TABLE invite_codes (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code       TEXT NOT NULL UNIQUE,
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    max_uses   INTEGER NOT NULL DEFAULT 1,
+    used_count INTEGER NOT NULL DEFAULT 0,
+    expires_at TIMESTAMPTZ,
+    note       TEXT NOT NULL DEFAULT '',
+    disabled   BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

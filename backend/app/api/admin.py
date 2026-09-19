@@ -18,6 +18,8 @@ from ..auth import require_admin
 from ..schemas import (
     AdminCreateUserRequest,
     AdminResetPasswordRequest,
+    InviteCreateRequest,
+    InviteOut,
     AnnotationCreate,
     AnnotationOut,
     AnnotationUpdate,
@@ -128,3 +130,46 @@ def admin_reset_password(user_id: str, req: AdminResetPasswordRequest, admin: di
     return {"ok": True}
 
 
+# ---------------------------------------------------------------------------
+# 邀请码（邀请制注册, 仅管理员）
+# ---------------------------------------------------------------------------
+
+def _invite_out(row: dict) -> InviteOut:
+    return InviteOut(
+        id=str(row["id"]),
+        code=row["code"],
+        maxUses=int(row["max_uses"]),
+        usedCount=int(row["used_count"]),
+        expiresAt=row.get("expires_at"),
+        note=row.get("note") or "",
+        disabled=bool(row.get("disabled")),
+        createdAt=row.get("created_at"),
+    )
+
+
+@router.post("/api/admin/invites")
+def admin_create_invite(req: InviteCreateRequest, admin: dict = Depends(require_admin)):
+    """生成邀请码（仅管理员）。返回码本身，前端拼成邀请链接发给被邀请人。"""
+    row = store.create_invite(
+        str(admin["id"]), max_uses=req.max_uses,
+        expires_days=req.expires_days, note=req.note,
+    )
+    logger.info("admin_create_invite: by=%s max_uses=%d expires_days=%s note=%r",
+                admin["username"], req.max_uses, req.expires_days, req.note[:30])
+    return _invite_out(row)
+
+
+@router.get("/api/admin/invites")
+def admin_list_invites(admin: dict = Depends(require_admin)):
+    """全部邀请码列表（最新在前，仅管理员）。"""
+    return [ _invite_out(r) for r in store.list_invites() ]
+
+
+@router.put("/api/admin/invites/{invite_id}/disable")
+def admin_disable_invite(invite_id: str, admin: dict = Depends(require_admin)):
+    """作废邀请码（幂等；作废后不可恢复，需要就生成新的）。"""
+    ok = store.disable_invite(invite_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="邀请码不存在或已作废")
+    logger.info("admin_disable_invite: by=%s invite=%s", admin["username"], invite_id)
+    return {"ok": True}

@@ -4,6 +4,7 @@ from .attachments import *  # noqa: F401,F403
 from .documents import *  # noqa: F401,F403
 from .gens import *  # noqa: F401,F403
 from .imas import *  # noqa: F401,F403
+from .invites import *  # noqa: F401,F403
 from .memorystate import *  # noqa: F401,F403
 from .models import *  # noqa: F401,F403
 from .usage import *  # noqa: F401,F403

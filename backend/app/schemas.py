@@ -318,6 +318,32 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegisterRequest(BaseModel):
+    """POST /api/auth/register body（邀请制注册）。"""
+    username: str = Field(min_length=2, max_length=32)
+    password: str = Field(min_length=6)
+    invite_code: str
+
+
+class InviteCreateRequest(BaseModel):
+    """POST /api/admin/invites body (admin only)。"""
+    max_uses: int = Field(default=1, ge=1, le=100)
+    expires_days: int | None = Field(default=None, ge=1, le=365)
+    note: str = Field(default="", max_length=100)
+
+
+class InviteOut(BaseModel):
+    """邀请码（admin 列表/生成返回）。"""
+    id: str
+    code: str
+    maxUses: int
+    usedCount: int
+    expiresAt: datetime | None = None
+    note: str = ""
+    disabled: bool = False
+    createdAt: datetime | None = None
+
+
 class RefreshRequest(BaseModel):
     """POST /api/auth/refresh and /api/auth/logout body."""
     refresh_token: str

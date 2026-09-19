@@ -1,4 +1,4 @@
-import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary, Annotation, BookmarkItem, MemoryItem, MemoryProfile, MemorySettings, MemorySettingsUpdate, SaveToImaRequest, SaveToImaResponse, User, AuthResponse, AdminUserCreateInput, Attachment } from "./types";
+import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary, Annotation, BookmarkItem, MemoryItem, MemoryProfile, MemorySettings, MemorySettingsUpdate, SaveToImaRequest, SaveToImaResponse, User, AuthResponse, AdminUserCreateInput, Attachment, Invite, InviteCreateInput } from "./types";
 
 /**
  * 后端 API 基址。
@@ -251,6 +251,22 @@ export const api = {
     clearSession();
   },
 
+  /** 邀请制注册: 凭邀请码自助建号, 成功即建立会话（返回结构与 login 一致）。 */
+  register: async (username: string, password: string, inviteCode: string): Promise<AuthResponse> => {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password, invite_code: inviteCode }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(body.detail || `HTTP ${res.status}`);
+    }
+    const auth = body as AuthResponse;
+    saveSession(auth.access_token, auth.refresh_token, auth.user);
+    return auth;
+  },
+
   getMe: () => json<User>("/auth/me"),
 
   /** 修改自己的密码；后端会吊销该用户全部 refresh token。 */
@@ -281,6 +297,24 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ new_password: newPassword }),
     }),
+
+  // ----- admin（邀请码, 邀请制注册）-----
+
+  listInvites: () => json<Invite[]>("/admin/invites"),
+
+  createInvite: (data: InviteCreateInput) =>
+    json<Invite>("/admin/invites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        max_uses: data.maxUses,
+        expires_days: data.expiresDays ?? null,
+        note: data.note ?? "",
+      }),
+    }),
+
+  disableInvite: (id: string) =>
+    json<{ ok: boolean }>(`/admin/invites/${id}/disable`, { method: "PUT" }),
 
   // ----- plans -----
 

@@ -29,21 +29,25 @@ def _user_public(row) -> dict:
 
 
 def create_user(
-    username: str, password_hash: str, role: str = "user", email: str | None = None
+    username: str,
+    password_hash: str,
+    role: str = "user",
+    email: str | None = None,
+    invited_by: str | None = None,
 ) -> dict:
     """Create a user and return its public dict. Raises ValueError on
-    duplicate username/email."""
+    duplicate username/email. ``invited_by`` 记录邀请码创建者（邀请制注册）。"""
     with db_conn() as conn:
         try:
             row = conn.execute(
-                """INSERT INTO users (username, password_hash, role, email)
-                   VALUES (%s, %s, %s, %s)
+                """INSERT INTO users (username, password_hash, role, email, invited_by)
+                   VALUES (%s, %s, %s, %s, %s)
                    RETURNING id, username, email, role, created_at""",
-                (username, password_hash, role, email),
+                (username, password_hash, role, email, invited_by),
             ).fetchone()
         except psycopg_errors.UniqueViolation as exc:
             raise ValueError("用户名或邮箱已存在") from exc
-    logger.info("create_user: %s role=%s", username, role)
+    logger.info("create_user: %s role=%s invited_by=%s", username, role, invited_by)
     return _user_public(row)
 
 

@@ -14,7 +14,7 @@
 #   5. 构建镜像并启动, 轮询 /api/health 健康检查 (预期 401 = 后端活着且鉴权生效)
 #
 # 首次部署前 (见 DEPLOY.md):
-#   - root 能访问 git@github.com:pengliuah/zhixue.git (SSH key 放 /root/.ssh)
+#   - root 能访问 https://github.com/pengliuah/ai-learning.git (私有化改造可换 REPO_URL)
 #   - cp deploy.env.example .env && vi .env   # JWT_SECRET 缺失时脚本会自动生成;
 #     ADMIN_PASSWORD / POSTGRES_PASSWORD 需手动设置
 #
@@ -22,8 +22,8 @@ set -euo pipefail
 
 # ===== 可配置项 (可用环境变量覆盖) =====
 APP_DIR=${APP_DIR:-/opt/zhixue}
-REPO_URL=${REPO_URL:-git@github.com:pengliuah/zhixue.git}
-BRANCH=${BRANCH:-test-deploy}
+REPO_URL=${REPO_URL:-https://github.com/pengliuah/ai-learning.git}
+BRANCH=${BRANCH:-master}
 IMAGE=${IMAGE:-zhixue-zhixue}
 BACKUP_DIR=${BACKUP_DIR:-/opt}
 # ========================================

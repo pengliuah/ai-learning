@@ -38,7 +38,7 @@ PostgreSQL）就绪的标志。
 ssh -T git@github.com     # 验证
 
 # 2. 准备部署目录并写配置
-sudo git clone -b test-deploy git@github.com:pengliuah/zhixue.git /opt/zhixue
+sudo git clone https://github.com/pengliuah/ai-learning.git /opt/zhixue
 cd /opt/zhixue
 sudo cp deploy.env.example .env
 sudo vi .env
@@ -67,7 +67,7 @@ sudo bash scripts/deploy.sh
 
 1. 备份数据库（pg_dumpall）与附件目录（tar）到 `/opt/`，每类只保留最新一份；
 2. `docker compose down` 停掉旧容器（并按镜像名兜底清理残留）；
-3. `git fetch + reset --hard origin/test-deploy` 拉取最新代码
+3. `git fetch + reset --hard origin/master` 拉取最新代码
    （`.env`、附件目录等均被 gitignore，不受影响）；
 4. 恢复 `.env`；`JWT_SECRET` 缺失时自动生成并持久化；写入日志级别；
 5. 构建镜像、启动，轮询 `http://127.0.0.1/api/health` 最多 60 秒，
@@ -90,7 +90,7 @@ sudo bash scripts/deploy.sh
 ## 6. 日常更新 / 回滚
 
 ```bash
-# 更新到 test-deploy 分支最新
+# 更新到最新
 sudo bash scripts/deploy.sh
 
 # 回滚代码: 在 /opt/zhixue 检出旧 commit 后重新构建

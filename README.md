@@ -56,8 +56,8 @@ DEPLOY.md          部署详细说明（架构、首次准备、备份、故障�
 **要求**：Linux 服务器 + Docker Compose v2 + git。部署形态为纯 HTTP、IP 直连（无域名/证书）。
 
 ```bash
-# 1. 拉代码 & 写配置（部署分支 test-deploy，只含测试环境部署逻辑）
-sudo git clone -b test-deploy git@github.com:pengliuah/zhixue.git /opt/zhixue
+# 1. 拉代码 & 写配置
+sudo git clone https://github.com/pengliuah/ai-learning.git /opt/zhixue
 cd /opt/zhixue
 sudo cp deploy.env.example .env
 sudo vi .env    # 设置 POSTGRES_PASSWORD / JWT_SECRET / ADMIN_PASSWORD

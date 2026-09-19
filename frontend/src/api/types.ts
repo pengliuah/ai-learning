@@ -173,10 +173,11 @@ export interface UsageSummary {
   allTime: UsageByKind;
 }
 
-/** 按模型类型拆分的用量：llm=大模型，embedding=向量模型 */
+/** 按模型类型拆分的用量：llm=大模型，embedding=向量模型，vision=多模态（附件转写） */
 export interface UsageByKind {
   llm: UsageStat;
   embedding: UsageStat;
+  vision: UsageStat;
 }
 
 export type SaveToImaContentType = "plan" | "content" | "quiz" | "result";

@@ -238,7 +238,7 @@ def _do_transcribe(user_id: str, att: dict) -> None:
                 input_tokens=usage.get("input_tokens", 0),
                 output_tokens=usage.get("output_tokens", 0),
                 total_tokens=usage.get("total_tokens", 0),
-                model=model, kind="llm",
+                model=model, kind="vision",
             )
         except Exception as exc:
             logger.warning("transcribe: usage record failed: %s", exc)

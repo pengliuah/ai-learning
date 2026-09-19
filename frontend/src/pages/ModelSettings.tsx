@@ -23,6 +23,7 @@ function UsageCard() {
   const kinds: [keyof UsageByKind, string][] = [
     ["llm", "大模型"],
     ["embedding", "嵌入模型"],
+    ["vision", "多模态"],
   ];
 
   return (

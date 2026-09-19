@@ -677,14 +677,44 @@ export function Coach() {
       <div className="mx-auto w-full max-w-5xl shrink-0 border-t border-gray-200 px-4 pb-4 pt-3 dark:border-gray-700">
         <AttachmentList manager={attachments} compact />
         <div className="flex items-end gap-2">
-          <button
-            onClick={() => coachFileRef.current?.click()}
-            disabled={streaming}
-            title="附上学习资料（图片 / PDF / Word / 文本）"
-            className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-md border border-gray-300 text-gray-500 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-400 dark:hover:border-indigo-500 dark:hover:text-indigo-400"
+          <div
+            className="relative flex-1"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const files = e.dataTransfer.files;
+              if (files.length > 0) attachments.addFiles(files);
+            }}
           >
-            <Paperclip className="h-4 w-4" />
-          </button>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              rows={2}
+              placeholder="输入学习目标，可直接粘贴/拖入图片或文件…"
+              className="w-full resize-none rounded-md border border-gray-300 bg-white py-3 pl-11 pr-3 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              onPaste={(e) => {
+                const files = e.clipboardData?.files ?? [];
+                if (files.length > 0) {
+                  e.preventDefault();
+                  attachments.addFiles(files);
+                }
+              }}
+            />
+            <button
+              onClick={() => coachFileRef.current?.click()}
+              disabled={streaming}
+              title="附上学习资料（图片 / PDF / Word / 文本）"
+              className="absolute bottom-3 left-3 inline-flex items-center justify-center rounded p-1 text-gray-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:text-indigo-400"
+            >
+              <Paperclip className="h-4 w-4" />
+            </button>
+          </div>
           <input
             ref={coachFileRef}
             type="file"
@@ -694,19 +724,6 @@ export function Coach() {
             onChange={(e) => {
               attachments.addFiles(e.target.files);
               e.target.value = "";
-            }}
-          />
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            rows={2}
-            placeholder="输入学习目标..."
-            className="flex-1 resize-none rounded-md border border-gray-300 bg-white p-3 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
             }}
           />
           <button

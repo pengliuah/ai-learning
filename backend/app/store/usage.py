@@ -33,14 +33,16 @@ def record_token_usage(
 ) -> None:
     """Insert one usage row.
 
-    ``kind`` distinguishes the billed model type: ``"llm"`` (大模型, 默认)
-    or ``"embedding"`` (向量模型). ``model`` defaults to the user's configured
-    LLM or embedding model respectively.
+    ``kind`` distinguishes the billed model type: ``"llm"`` (大模型, 默认),
+    ``"embedding"`` (向量模型) or ``"vision"`` (多模态, 附件转写). ``model``
+    defaults to the user's configured model of that kind.
     """
     if model is None:
         try:
             if kind == "embedding":
                 model = get_embedding_config(user_id)[1] or ""
+            elif kind == "vision":
+                model = get_vision_config(user_id)[1] or get_llm_config(user_id)[1] or ""
             else:
                 model = get_llm_config(user_id)[1] or ""
         except Exception:
@@ -86,7 +88,7 @@ def get_usage_summary(user_id: str) -> dict:
                 "totalTokens": int(row["total_tokens"]) if row else 0,
             }
 
-        return {"llm": _stat("llm"), "embedding": _stat("embedding")}
+        return {"llm": _stat("llm"), "embedding": _stat("embedding"), "vision": _stat("vision")}
 
     return {
         "today": _sum(today_start),

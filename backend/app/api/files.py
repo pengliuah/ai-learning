@@ -50,6 +50,13 @@ async def upload_file(file: UploadFile = File(...), user: dict = Depends(get_cur
     return _out(row)
 
 
+@router.get("/api/files")
+def list_files(user: dict = Depends(get_current_user)):
+    """当前用户上传的全部附件（元数据，最新在前），供「学习资料」管理页。"""
+    rows = store.list_attachments(str(user["id"]))
+    return [_out(r) for r in rows]
+
+
 @router.get("/api/files/{attachment_id}")
 def get_file(attachment_id: str, user: dict = Depends(get_current_user)):
     """查询单个附件的转写状态与结果（轮询端点，仅本人可见）。"""

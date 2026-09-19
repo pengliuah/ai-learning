@@ -25,6 +25,12 @@ def _storage_root() -> Path:
     return root
 
 
+# 列表/详情共用的元数据列 (不含 path/文件内容, 不外泄也不拖数据)
+_META_COLS = (
+    "id, user_id, filename, mime, size_bytes, transcript, transcript_status, created_at"
+)
+
+
 def _write_file(path_rel: str, data: bytes) -> None:
     dest = _storage_root() / path_rel
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -77,13 +83,26 @@ def create_attachment(user_id: str, filename: str, mime: str, data: bytes) -> di
         raise
 
 
+def list_attachments(user_id: str, limit: int = 200) -> list[dict]:
+    """All attachments of the user, newest first (meta only, no file data)."""
+    with db_conn() as conn:
+        rows = conn.execute(
+            f"""SELECT {_META_COLS} FROM attachments
+                WHERE user_id = %s
+                ORDER BY created_at DESC, id DESC
+                LIMIT %s""",
+            (user_id, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_attachment(user_id: str, attachment_id: str, *, with_data: bool = False) -> dict | None:
     """Return one attachment row for the owner (None otherwise / bad UUID).
 
     ``with_data=True`` 时把磁盘上的原始文件读进返回值的 ``data`` 字段；
     文件缺失时 ``data`` 为 None，由调用方决定如何响应。
     """
-    cols = "id, user_id, filename, mime, size_bytes, transcript, transcript_status, created_at"
+    cols = _META_COLS
     if with_data:
         cols += ", path"
     try:

@@ -308,6 +308,9 @@ export const api = {
 
   // ----- files（学习资料附件: 上传后后端自动转写, 前端轮询拿状态）-----
 
+  /** 全部附件列表（元数据，最新在前）——「学习资料」管理页。 */
+  listFiles: () => json<Attachment[]>("/files"),
+
   uploadFile: (file: File, onProgress?: (pct: number) => void) =>
     uploadFileWithRefresh(file, onProgress),
 

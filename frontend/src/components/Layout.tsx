@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { BookOpen, Sun, Moon, Bot, Settings, Users, LogOut } from "lucide-react";
+import { BookOpen, Sun, Moon, Bot, Settings, Users, LogOut, FolderOpen } from "lucide-react";
 import { HealthBanner } from "./HealthBanner";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../auth/AuthContext";
@@ -41,6 +41,13 @@ export function Layout({ children, wide = false }: { children: React.ReactNode; 
             >
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
+            <Link
+              to="/files"
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+              title="学习资料"
+            >
+              <FolderOpen className="h-4 w-4" />
+            </Link>
             <Link
               to="/settings"
               className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"

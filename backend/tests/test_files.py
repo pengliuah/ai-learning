@@ -18,10 +18,11 @@ def no_auto_transcribe(monkeypatch):
     monkeypatch.setattr(attachments_svc, "start_transcription", lambda uid, aid: None)
 
 
-def _upload(client, filename: str, content: bytes, mime: str = "application/octet-stream"):
+def _upload(client, filename: str, content: bytes, mime: str = "application/octet-stream", token=None):
     return client.post(
         "/api/files",
         files={"file": (filename, io.BytesIO(content), mime)},
+        headers=token or {},
     )
 
 
@@ -66,6 +67,19 @@ def test_attachment_owner_isolation(client, no_auto_transcribe, admin_user, norm
     # 删除后本人也 404
     assert client.delete(f"/api/files/{aid}").status_code == 200
     assert client.get(f"/api/files/{aid}").status_code == 404
+
+
+def test_list_files_returns_only_own_newest_first(client, no_auto_transcribe, admin_user, normal_user):
+    r1 = _upload(client, "a.txt", b"1", "text/plain")
+    r2 = _upload(client, "b.txt", b"22", "text/plain")
+    _upload(client, "c.txt", b"3", "text/plain", token=auth_headers(normal_user))
+    listed = client.get("/api/files").json()
+    mine = [a["filename"] for a in listed]
+    assert mine[:2] == ["b.txt", "a.txt"]  # 最新在前
+    assert "c.txt" not in mine            # 别人的附件不可见
+    for a in listed:
+        assert set(a) >= {"id", "filename", "mime", "sizeBytes", "transcriptStatus"}
+        assert "path" not in a and "data" not in a  # 不外泄存储路径/内容
 
 
 def test_raw_returns_original_bytes(client, no_auto_transcribe):

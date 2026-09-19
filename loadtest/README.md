@@ -23,12 +23,12 @@ cd backend && uv pip install locust && cd ..
 
 # 2. 只读压测（安全：不写数据、不调 LLM），Web UI 模式
 LOADTEST_USERNAME=admin LOADTEST_PASSWORD=admin123 \
-  uv run --with locust locust -f loadtest/locustfile.py --host http://192.168.1.184
+  uv run --with locust locust -f loadtest/locustfile.py --host http://<服务器IP>
 # 浏览器打开 http://localhost:8089，设置并发数开始
 
 # 3. 无界面跑一段（CI/无人值守友好）
 LOADTEST_USERNAME=admin LOADTEST_PASSWORD=admin123 \
-  uv run --with locust locust -f loadtest/locustfile.py --host http://192.168.1.184 \
+  uv run --with locust locust -f loadtest/locustfile.py --host http://<服务器IP> \
   --headless -u 30 -r 5 -t 3m --only-summary
 #   -u 30 并发30人  -r 每秒加5人  -t 跑3分钟
 ```
@@ -61,7 +61,7 @@ docker compose -f docker-compose.test.yml exec postgres \
 # ⚠️ 开启前务必新建一个专门的"压测计划"：此任务会重新生成并覆盖模块内容，
 # 且真实调用 LLM（计费、可能触发供应商限流）。并发控制在 3~5。
 LOADTEST_LLM=1 LOADTEST_USERNAME=admin LOADTEST_PASSWORD=admin123 \
-  uv run --with locust locust -f loadtest/locustfile.py --host http://192.168.1.184 \
+  uv run --with locust locust -f loadtest/locustfile.py --host http://<服务器IP> \
   --headless -u 3 -r 1 -t 5m --only-summary --tag sse
 ```
 

@@ -18,7 +18,7 @@ from typing import AsyncIterator
 import os
 
 # --- 数据库安全护栏 (必须先于任何 app 导入执行) -------------------------------
-# .env 的 DATABASE_URL 指向测试环境服务器的真实库 (如 192.168.1.184:5432/zhixue),
+# .env 的 DATABASE_URL 指向测试环境服务器的真实库 (<测试服务器>:5432/zhixue),
 # 而 tmp_store 夹具会 TRUNCATE 全库 —— 直接用会把线上数据清掉 (2026-09-06 事故:
 # 跑一次测试, 账号/模型配置/书签/用量全部丢失)。这里强制把库名改写为
 # zhixue_test, 测试永远打不进真实库。逃生阀: ZHIXUE_ALLOW_LIVE_DB_TESTS=1。

@@ -53,8 +53,8 @@ PS D:\xishan\mobile> npm run build:apk   # release 包：未配签名时产出 u
 
   ```powershell
   # 在 <仓库根>\mobile 下执行
-  PS D:\xishan\mobile> $env:VITE_API_BASE = "http://192.168.1.184/api"
-  PS D:\xishan\mobile> npm run dev:apk        # 打完后建议删掉该环境变量再打正式包
+  PS <仓库根>\mobile> $env:VITE_API_BASE = "http://<服务器IP>/api"
+  PS <仓库根>\mobile> npm run dev:apk        # 打完后建议删掉该环境变量再打正式包
   ```
 
   同时临时把 `mobile\capacitor.config.json` 里的 `"server"` 加回 `"cleartext": true`。

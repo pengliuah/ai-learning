@@ -90,19 +90,12 @@ else
   log "无残留容器, 跳过"
 fi
 
-# 一次性迁移: 旧部署的数据库在命名卷 zhixue_pgdata 里, 现改为宿主机
-# ./pgdata 持久化; 卷存在且目标目录为空时把数据搬过来 (postgres 已停止, 拷贝安全)
-if docker volume inspect "$OLD_DB_VOLUME" >/dev/null 2>&1 && [ ! -f "$PGDATA_DIR/PG_VERSION" ]; then
-  log "检测到旧数据库卷 $OLD_DB_VOLUME, 迁移到 $PGDATA_DIR (一次性)..."
-  mkdir -p "$PGDATA_DIR"
-  docker run --rm -v "$OLD_DB_VOLUME":/from:ro -v "$PGDATA_DIR":/to alpine \
-    sh -c 'cp -a /from/. /to/ && chown -R 70:70 /to'
-  log "旧卷数据已迁移到 $PGDATA_DIR"
-fi
-
-# 一次性迁移: 旧部署目录 /opt/zhixue -> /opt/ai-learning。
+# 一次性迁移 (先执行): 旧部署目录 /opt/zhixue -> /opt/ai-learning。
 # 三样数据搬过来: 数据库 pgdata / .env (JWT_SECRET/管理员配置) / 附件目录。
 # 只在目标为空时搬运, postgres 已停止, 拷贝安全; 老目录保留不删 (回退用)。
+# 顺序敏感: host 目录数据比命名卷新 (host pgdata 是现行存储), 必须先迁目录
+# 再迁卷 —— 若先迁卷, 目标被远古数据灌满, 目录迁移条件永远不成立, 近期数据
+# 被顶掉 (2026-09-20 记忆数据"丢失"事故根因)。
 OLD_APP_DIR=${OLD_APP_DIR:-/opt/zhixue}
 if [ "$OLD_APP_DIR" != "$APP_DIR" ] && [ -d "$OLD_APP_DIR" ]; then
   if [ ! -f "$PGDATA_DIR/PG_VERSION" ] && [ -f "$OLD_APP_DIR/pgdata/PG_VERSION" ]; then
@@ -120,6 +113,16 @@ if [ "$OLD_APP_DIR" != "$APP_DIR" ] && [ -d "$OLD_APP_DIR" ]; then
     cp -a "$OLD_APP_DIR/data/attachments" "$APP_DIR/data/attachments"
     log "旧目录附件已迁移到 $APP_DIR/data/attachments"
   fi
+fi
+
+# 一次性迁移 (仅在目录迁移后目标仍为空时): 更早期的数据库在命名卷
+# zhixue_pgdata 里; 卷存在且目标目录为空时把数据搬过来 (postgres 已停止)
+if docker volume inspect "$OLD_DB_VOLUME" >/dev/null 2>&1 && [ ! -f "$PGDATA_DIR/PG_VERSION" ]; then
+  log "检测到旧数据库卷 $OLD_DB_VOLUME, 迁移到 $PGDATA_DIR (一次性)..."
+  mkdir -p "$PGDATA_DIR"
+  docker run --rm -v "$OLD_DB_VOLUME":/from:ro -v "$PGDATA_DIR":/to alpine \
+    sh -c 'cp -a /from/. /to/ && chown -R 70:70 /to'
+  log "旧卷数据已迁移到 $PGDATA_DIR"
 fi
 
 # ---- 2. 备份服务器上的 .env ----

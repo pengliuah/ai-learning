@@ -222,22 +222,6 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
         )
         logger.info("init_schema: attachments table added")
 
-    # 存储切换: 原始文件改存文件系统, 库里只存相对路径 path (功能未上线过,
-    # 旧 data BYTEA 列没有真实数据, 直接删掉)。
-    # 先探测旧列是否存在, 只在真需要迁移时才动 DDL——否则每次启动都要
-    # 对表加锁跑 ALTER。表可能是三种状态: 无表(上面刚建, 带 path) /
-    # 旧表(带 data) / 已迁移(带 path), 只有旧表会进这个分支。
-    if conn.execute(
-        """SELECT 1 FROM information_schema.columns
-           WHERE table_schema = 'public' AND table_name = 'attachments'
-             AND column_name = 'data'"""
-    ).fetchone():
-        conn.execute(
-            "ALTER TABLE attachments ADD COLUMN IF NOT EXISTS path TEXT NOT NULL DEFAULT ''"
-        )
-        conn.execute("ALTER TABLE attachments DROP COLUMN data")
-        logger.info("init_schema: attachments.data -> path (文件系统存储切换)")
-
     # 多选题支持: questions.type 增加 mcq_multi + answers 列 (幂等, 老库也升级)。
     # 内联 CHECK 约束的默认名是 questions_type_check。
     if conn.execute("SELECT to_regclass('public.questions')").fetchone()[0]:

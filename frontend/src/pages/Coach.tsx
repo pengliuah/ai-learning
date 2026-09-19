@@ -676,45 +676,52 @@ export function Coach() {
       {/* Input */}
       <div className="mx-auto w-full max-w-5xl shrink-0 border-t border-gray-200 px-4 pb-4 pt-3 dark:border-gray-700">
         <AttachmentList manager={attachments} compact />
-        <div className="flex items-end gap-2">
-          <div
-            className="relative flex-1"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              const files = e.dataTransfer.files;
-              if (files.length > 0) attachments.addFiles(files);
+        <div
+          className="relative"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const files = e.dataTransfer.files;
+            if (files.length > 0) attachments.addFiles(files);
+          }}
+        >
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            rows={2}
+            placeholder="输入学习目标，可直接粘贴/拖入图片或文件…"
+            className="w-full resize-none rounded-md border border-gray-300 bg-white py-3 pl-11 pr-16 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
             }}
+            onPaste={(e) => {
+              const files = e.clipboardData?.files ?? [];
+              if (files.length > 0) {
+                e.preventDefault();
+                attachments.addFiles(files);
+              }
+            }}
+          />
+          {/* 📎 与首行文字同基线 (py-3), 发送键在框内右下角 */}
+          <button
+            onClick={() => coachFileRef.current?.click()}
+            disabled={streaming}
+            title="附上学习资料（图片 / PDF / Word / 文本）"
+            className="absolute left-3 top-2.5 inline-flex items-center justify-center rounded p-1 text-gray-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:text-indigo-400"
           >
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              rows={2}
-              placeholder="输入学习目标，可直接粘贴/拖入图片或文件…"
-              className="w-full resize-none rounded-md border border-gray-300 bg-white py-3 pl-11 pr-3 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              onPaste={(e) => {
-                const files = e.clipboardData?.files ?? [];
-                if (files.length > 0) {
-                  e.preventDefault();
-                  attachments.addFiles(files);
-                }
-              }}
-            />
-            <button
-              onClick={() => coachFileRef.current?.click()}
-              disabled={streaming}
-              title="附上学习资料（图片 / PDF / Word / 文本）"
-              className="absolute bottom-3 left-3 inline-flex items-center justify-center rounded p-1 text-gray-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:text-indigo-400"
-            >
-              <Paperclip className="h-4 w-4" />
-            </button>
-          </div>
+            <Paperclip className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => handleSend()}
+            disabled={(!input.trim() && attachments.readyIds.length === 0) || streaming || attachments.hasActive}
+            title={attachments.hasActive ? "附件解析中，稍候再发送" : undefined}
+            className="absolute bottom-2.5 right-2.5 inline-flex h-8 items-center gap-1.5 rounded-md bg-indigo-600 px-3 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500 dark:hover:bg-indigo-600"
+          >
+            {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          </button>
           <input
             ref={coachFileRef}
             type="file"
@@ -726,14 +733,6 @@ export function Coach() {
               e.target.value = "";
             }}
           />
-          <button
-            onClick={() => handleSend()}
-            disabled={(!input.trim() && attachments.readyIds.length === 0) || streaming || attachments.hasActive}
-            title={attachments.hasActive ? "附件解析中，稍候再发送" : undefined}
-            className="inline-flex h-[42px] items-center gap-1.5 rounded-md bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500 dark:hover:bg-indigo-600"
-          >
-            {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </button>
         </div>
       </div>
     </div>

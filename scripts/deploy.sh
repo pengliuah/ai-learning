@@ -37,7 +37,6 @@ LOG_LEVEL_ARG=$(printf '%s' "${1:-INFO}" | tr '[:lower:]' '[:upper:]')
 ts=$(date +%Y%m%d-%H%M%S)
 PGDATA_DIR="$APP_DIR/pgdata"
 ATTACHMENTS_DIR="$APP_DIR/data/attachments"
-OLD_DB_VOLUME="zhixue_pgdata"
 COMPOSE_FILE="docker-compose.test.yml"
 
 # 写 /opt 与调用 docker 都需要 root
@@ -88,16 +87,6 @@ if [ -n "$old_containers" ]; then
   log "已移除旧容器: $(echo $old_containers | tr '\n' ' ')"
 else
   log "无残留容器, 跳过"
-fi
-
-# 一次性迁移: 旧部署的数据库在命名卷 zhixue_pgdata 里, 现改为宿主机
-# ./pgdata 持久化; 卷存在且目标目录为空时把数据搬过来 (postgres 已停止, 拷贝安全)
-if docker volume inspect "$OLD_DB_VOLUME" >/dev/null 2>&1 && [ ! -f "$PGDATA_DIR/PG_VERSION" ]; then
-  log "检测到旧数据库卷 $OLD_DB_VOLUME, 迁移到 $PGDATA_DIR (一次性)..."
-  mkdir -p "$PGDATA_DIR"
-  docker run --rm -v "$OLD_DB_VOLUME":/from:ro -v "$PGDATA_DIR":/to alpine \
-    sh -c 'cp -a /from/. /to/ && chown -R 70:70 /to'
-  log "旧卷数据已迁移到 $PGDATA_DIR"
 fi
 
 # 一次性迁移: 旧部署目录 /opt/zhixue -> /opt/ai-learning。

@@ -195,6 +195,7 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
         logger.info("init_schema: annotations table added")
 
     # 学习资料附件 (全模态转写): 上传的原始文件 + 转写出的 markdown 文本。
+    # 原始文件存文件系统 (attachments_dir), 库里只存相对路径 path;
     # 转写在后台异步进行, transcript_status: pending/running/done/failed。
     if not conn.execute("SELECT to_regclass('public.attachments')").fetchone()[0]:
         conn.execute(
@@ -204,7 +205,7 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
                    filename          TEXT NOT NULL DEFAULT '',
                    mime              TEXT NOT NULL DEFAULT '',
                    size_bytes        INTEGER NOT NULL DEFAULT 0,
-                   data              BYTEA,
+                   path              TEXT NOT NULL DEFAULT '',
                    transcript        TEXT NOT NULL DEFAULT '',
                    transcript_status TEXT NOT NULL DEFAULT 'pending',
                    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -220,6 +221,11 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
             "CREATE INDEX idx_attachments_user ON attachments (user_id, created_at)"
         )
         logger.info("init_schema: attachments table added")
+
+    # 存储切换: 原始文件改存文件系统, 库里只存相对路径 path (功能未上线过,
+    # 旧 data BYTEA 列没有真实数据, 直接删掉; 幂等, 新库已是 path 无感)
+    conn.execute("ALTER TABLE attachments ADD COLUMN IF NOT EXISTS path TEXT NOT NULL DEFAULT ''")
+    conn.execute("ALTER TABLE attachments DROP COLUMN IF EXISTS data")
 
     # 多选题支持: questions.type 增加 mcq_multi + answers 列 (幂等, 老库也升级)。
     # 内联 CHECK 约束的默认名是 questions_type_check。

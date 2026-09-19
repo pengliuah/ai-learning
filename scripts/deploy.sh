@@ -47,6 +47,7 @@ ENV=${1:-}
 LOG_LEVEL_ARG=$(printf '%s' "${2:-INFO}" | tr '[:lower:]' '[:upper:]')
 ts=$(date +%Y%m%d-%H%M%S)
 PGDATA_DIR="$APP_DIR/pgdata"
+ATTACHMENTS_DIR="$APP_DIR/data/attachments"
 OLD_DB_VOLUME="zhixue_pgdata"
 
 COMPOSE_FILE="docker-compose.$ENV.yml"
@@ -78,6 +79,17 @@ if [ -n "$running_pg" ]; then
   fi
 else
   warn "0/5 未发现运行中的 postgres 容器, 跳过数据库备份"
+fi
+
+# ---- 0b. 附件目录备份 (原始文件在文件系统, 不在 pg_dump 里) ----
+# 附件是"丢了不致命"的数据, tar 一份轻量保险; 目录不存在 (首次部署) 则跳过
+if [ -d "$ATTACHMENTS_DIR" ] && [ -n "$(ls -A "$ATTACHMENTS_DIR" 2>/dev/null)" ]; then
+  mkdir -p "$BACKUP_DIR"
+  if tar -czf "$BACKUP_DIR/zhixue-attachments-$ts.tar.gz" -C "$ATTACHMENTS_DIR" . 2>/dev/null; then
+    log "0b/5 已备份附件目录 -> $BACKUP_DIR/zhixue-attachments-$ts.tar.gz ($(du -h "$BACKUP_DIR/zhixue-attachments-$ts.tar.gz" | cut -f1))"
+  else
+    warn "附件目录备份失败, 继续部署"
+  fi
 fi
 
 # ---- 1. 停掉旧容器 ----
@@ -116,7 +128,7 @@ fi
 # 备份清理: 每类备份只保留最新一份 (ls -t 按时间排, 当前这次的最新, 不会被删)。
 # 末尾 || true: glob 无匹配时 ls 退出码非 0, 在 pipefail 下会中断整个脚本。
 # compose 备份已不再生成, 保留 pattern 以清理历史残留文件。
-for pattern in "docker-compose.*.yml.bak.*" "zhixue.env.bak.*" "zhixue-db-*.sql.gz"; do
+for pattern in "docker-compose.*.yml.bak.*" "zhixue.env.bak.*" "zhixue-db-*.sql.gz" "zhixue-attachments-*.tar.gz"; do
   ls -1t "$BACKUP_DIR"/$pattern 2>/dev/null | tail -n +2 | while IFS= read -r f; do
     rm -f "$f"
   done || true

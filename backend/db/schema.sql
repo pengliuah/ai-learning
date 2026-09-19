@@ -357,8 +357,9 @@ CREATE INDEX idx_annotations_user_plan ON annotations (user_id, plan_id);
 -- ---------------------------------------------------------------------------
 -- attachments  -  学习资料附件（全模态转写）
 --
--- 上传的原始文件存 BYTEA（上限 50MB），后台用多模态模型把内容转写成
--- markdown 存 transcript；transcript_status: pending/running/done/failed。
+-- 原始文件存文件系统 (settings.attachments_dir, 部署时挂 docker 卷), 数据库只存
+-- 相对路径 path; 后台用多模态模型把内容转写成 markdown 存 transcript；
+-- transcript_status: pending/running/done/failed。
 -- 计划创建与教练聊天通过 attachmentIds 引用附件的转写文本，两段式架构：
 -- 全模态只做"文件→文本"的理解层，不进计划生成的结构化输出链路。
 -- ---------------------------------------------------------------------------
@@ -368,7 +369,7 @@ CREATE TABLE attachments (
     filename          TEXT NOT NULL DEFAULT '',
     mime              TEXT NOT NULL DEFAULT '',
     size_bytes        INTEGER NOT NULL DEFAULT 0,
-    data              BYTEA,
+    path              TEXT NOT NULL DEFAULT '',
     transcript        TEXT NOT NULL DEFAULT '',
     transcript_status TEXT NOT NULL DEFAULT 'pending',
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),

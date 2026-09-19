@@ -74,11 +74,11 @@ def retry_transcribe(attachment_id: str, user: dict = Depends(get_current_user))
 def get_file_raw(attachment_id: str, user: dict = Depends(get_current_user)):
     """原始文件内容（图片预览/下载用，仅本人可见）。"""
     row = store.get_attachment(str(user["id"]), attachment_id, with_data=True)
-    if row is None:
+    if row is None or row.get("data") is None:
         raise HTTPException(404, "附件不存在")
     filename = quote(row["filename"] or "file")
     return Response(
-        content=row["data"] or b"",
+        content=row["data"],
         media_type=row["mime"] or "application/octet-stream",
         headers={"Content-Disposition": f"inline; filename*=UTF-8''{filename}"},
     )

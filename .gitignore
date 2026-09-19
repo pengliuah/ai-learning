@@ -33,5 +33,8 @@ docker-compose.override.*.yml
 # postgres 宿主机数据目录 (deploy 持久化)
 pgdata/
 
+# 学习资料附件原始文件 (随目录单独备份, 不进 git)
+data/attachments/
+
 # ZCode 本地会话数据 (计划/缓存, 不入库)
 .zcode/

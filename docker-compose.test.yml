@@ -19,8 +19,13 @@ services:
     build: .
     expose:
       - "8000"
+    volumes:
+      # 学习资料附件: 原始文件落宿主机 ./data/attachments (与 ./pgdata 同理,
+      # 目录可见最稳), 容器内经 ATTACHMENTS_DIR 指向
+      - ./data/attachments:/data/attachments
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ATTACHMENTS_DIR=/data/attachments
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-123}@postgres:5432/zhixue
       # 账号系统: JWT 签名密钥与首次引导管理员 (模型 API Key 不在这里,
       # 每个用户登录后在网页「模型设置」页配置, 存数据库)

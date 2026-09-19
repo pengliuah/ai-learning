@@ -255,6 +255,10 @@ def transcribe_attachment(user_id: str, attachment_id: str) -> None:
     if att is None:
         logger.warning("transcribe: attachment %s not found", attachment_id)
         return
+    if not att.get("data"):
+        logger.warning("transcribe: file missing on disk attachment=%s", attachment_id)
+        store.update_transcript(attachment_id, "原始文件丢失，请删除后重新上传", "failed")
+        return
     store.update_transcript(attachment_id, "", "running")
     try:
         _do_transcribe(user_id, att)

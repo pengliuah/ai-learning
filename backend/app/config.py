@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     memory_housekeeping: bool = True
     memory_housekeeping_interval_hours: int = 24
 
+    # 学习资料附件的文件存储目录 (原始文件不入库, 数据库只存相对路径)。
+    # 部署时 docker compose 把宿主机 ./data/attachments 挂到容器内同一职责目录
+    # 并以 ATTACHMENTS_DIR 指过去; 本地开发默认落在 backend/data/attachments。
+    attachments_dir: str = str(BACKEND_DIR / "data" / "attachments")
+
     # Auth: JWT secret for access tokens. When unset, a random secret is
     # generated at startup -- restarts then invalidate all access tokens
     # (refresh tokens still work), so set JWT_SECRET for stable sessions.

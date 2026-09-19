@@ -31,6 +31,11 @@ if _db_url and os.environ.get("ZHIXUE_ALLOW_LIVE_DB_TESTS") != "1":
     if _dbname != "zhixue_test":
         os.environ["DATABASE_URL"] = f"{_head}/zhixue_test"
 
+# 附件文件存储同理: 指到一次性临时目录, 测试写盘不落 backend/data
+import tempfile
+
+os.environ["ATTACHMENTS_DIR"] = tempfile.mkdtemp(prefix="zhixue_test_attachments_")
+
 import pytest
 from fastapi.testclient import TestClient
 

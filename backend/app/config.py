@@ -80,6 +80,11 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+# ADMIN_PASSWORD 为空串时 (compose 传了空 env 变量, pydantic 不回退默认值)
+# 回退到内置默认 —— 否则首次引导会创建出"空密码"的 admin 账号 (2026-09-20 事故)
+if not settings.admin_password:
+    settings.admin_password = "admin123"
+
 if not settings.jwt_secret:
     settings.jwt_secret = secrets.token_urlsafe(48)
     logging.getLogger(__name__).warning(

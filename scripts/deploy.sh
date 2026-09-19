@@ -89,28 +89,6 @@ else
   log "无残留容器, 跳过"
 fi
 
-# 一次性迁移: 旧部署目录 /opt/zhixue -> /opt/ai-learning。
-# 三样数据搬过来: 数据库 pgdata / .env (JWT_SECRET/管理员配置) / 附件目录。
-# 只在目标为空时搬运, postgres 已停止, 拷贝安全; 老目录保留不删 (回退用)。
-OLD_APP_DIR=${OLD_APP_DIR:-/opt/zhixue}
-if [ "$OLD_APP_DIR" != "$APP_DIR" ] && [ -d "$OLD_APP_DIR" ]; then
-  if [ ! -f "$PGDATA_DIR/PG_VERSION" ] && [ -f "$OLD_APP_DIR/pgdata/PG_VERSION" ]; then
-    log "检测到旧部署目录 $OLD_APP_DIR, 迁移数据库到 $PGDATA_DIR (一次性)..."
-    mkdir -p "$PGDATA_DIR"
-    cp -a "$OLD_APP_DIR/pgdata/." "$PGDATA_DIR/"
-    log "旧目录数据库已迁移到 $PGDATA_DIR"
-  fi
-  if [ ! -f "$APP_DIR/.env" ] && [ -f "$OLD_APP_DIR/.env" ]; then
-    cp -a "$OLD_APP_DIR/.env" "$APP_DIR/.env"
-    log "旧目录 .env 已迁移到 $APP_DIR/.env (JWT_SECRET/管理员配置保持不变)"
-  fi
-  if [ ! -d "$APP_DIR/data/attachments" ] && [ -d "$OLD_APP_DIR/data/attachments" ]; then
-    mkdir -p "$APP_DIR/data"
-    cp -a "$OLD_APP_DIR/data/attachments" "$APP_DIR/data/attachments"
-    log "旧目录附件已迁移到 $APP_DIR/data/attachments"
-  fi
-fi
-
 # ---- 2. 备份服务器上的 .env ----
 # .env 被 gitignore, 属于服务器侧数据, 覆盖更新前必须备份。
 # compose 文件是 git 跟踪的, 不做备份/恢复: 曾经的"恢复旧备份"会把新 compose

@@ -212,7 +212,7 @@ def _do_transcribe(user_id: str, att: dict) -> None:
     filename = att["filename"] or "未命名"
     usage = None
     if mime.startswith("image/"):
-        img, _ = _compress_image(data)
+        img = _compress_image(data)
         transcript, usage = _transcribe_images(
             user_id, [(img, mime)], f"请转写文件《{filename}》的全部内容。"
         )

@@ -126,6 +126,30 @@ def test_transcribe_docx_extracts_text(client, no_auto_transcribe, admin_user):
     assert "| 甲 | 乙 |" in body["transcript"]
 
 
+def test_transcribe_image_calls_vision_pipeline(client, no_auto_transcribe, admin_user, monkeypatch):
+    """图片走压缩→视觉转写管线并成功入库 (回归: img, _ = bytes 解包崩溃)。"""
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), color=(200, 100, 50)).save(buf, format="PNG")
+    r = _upload(client, "图.png", buf.getvalue(), "image/png")
+    aid = r.json()["id"]
+
+    captured = {}
+
+    def fake_transcribe(uid, images, text):
+        captured.update(uid=uid, images=images, text=text)
+        return "转写出的文本", None
+
+    monkeypatch.setattr(attachments_svc, "_transcribe_images", fake_transcribe)
+    attachments_svc.transcribe_attachment(str(admin_user["id"]), aid)
+    body = client.get(f"/api/files/{aid}").json()
+    assert body["transcriptStatus"] == "done", body["transcript"]
+    assert body["transcript"] == "转写出的文本"
+    assert len(captured["images"]) == 1
+    assert captured["images"][0][0] == buf.getvalue()  # 小图不压缩, 原样送模型
+
+
 def test_transcribe_persists_failure_message(client, no_auto_transcribe, admin_user, monkeypatch):
     # 视觉模型未配置的图片 → failed + 可读原因
     r = _upload(client, "photo.png", b"\x89PNG fake", "image/png")

@@ -370,6 +370,7 @@ CREATE TABLE attachments (
     mime              TEXT NOT NULL DEFAULT '',
     size_bytes        INTEGER NOT NULL DEFAULT 0,
     path              TEXT NOT NULL DEFAULT '',
+    sha256            TEXT NOT NULL DEFAULT '',
     transcript        TEXT NOT NULL DEFAULT '',
     transcript_status TEXT NOT NULL DEFAULT 'pending',
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -379,3 +380,4 @@ CREATE TRIGGER attachments_set_updated_at
     BEFORE UPDATE ON attachments
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE INDEX idx_attachments_user ON attachments (user_id, created_at);
+CREATE INDEX idx_attachments_user_sha ON attachments (user_id, sha256);

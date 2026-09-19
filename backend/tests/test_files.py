@@ -107,6 +107,48 @@ def test_retry_transcribe(client, no_auto_transcribe, admin_user):
     assert r2.status_code == 200
 
 
+def test_transcribe_endpoint_end_to_end(client, admin_user):
+    """真实链路: 上传 → POST transcribe → 轮询到 done, 不打任何桩。
+
+    回归保护: retry_transcribe 曾是同步 def, 真机 uvicorn 线程池里
+    asyncio.create_task 必炸 500 (no running event loop), 转写永不开始;
+    TestClient 环境因夹具打桩测不出来。
+    """
+    import time
+
+    r = _upload(client, "e2e.txt", "端到端转写检查".encode("utf-8"), "text/plain")
+    aid = r.json()["id"]
+    assert client.post(f"/api/files/{aid}/transcribe").status_code == 200
+    for _ in range(40):
+        body = client.get(f"/api/files/{aid}").json()
+        if body["transcriptStatus"] in ("done", "failed"):
+            break
+        time.sleep(0.25)
+    assert body["transcriptStatus"] == "done", body["transcript"]
+    assert "端到端" in body["transcript"]
+
+
+def test_upload_same_file_reuses_transcription(client, no_auto_transcribe, admin_user):
+    """同用户上传内容相同的文件: 直接复用已有转写, 状态即 done。"""
+    r1 = _upload(client, "讲义.txt", b"same-content-body", "text/plain")
+    attachments_svc.transcribe_attachment(str(admin_user["id"]), r1.json()["id"])
+    assert client.get(f"/api/files/{r1.json()['id']}").json()["transcriptStatus"] == "done"
+
+    r2 = _upload(client, "换个名字.txt", b"same-content-body", "text/plain")
+    att2 = r2.json()
+    assert att2["transcriptStatus"] == "done"
+    assert att2["transcript"] == "same-content-body"
+    assert att2["id"] != r1.json()["id"]  # 各行独立生命周期
+
+
+def test_upload_same_file_different_user_not_reused(client, no_auto_transcribe, admin_user, normal_user):
+    """跨用户不复用: 转写文本是用户数据, 不跨账号。"""
+    r1 = _upload(client, "a.txt", b"shared-bytes", "text/plain")
+    attachments_svc.transcribe_attachment(str(admin_user["id"]), r1.json()["id"])
+    r2 = _upload(client, "a.txt", b"shared-bytes", "text/plain", token=auth_headers(normal_user))
+    assert r2.json()["transcriptStatus"] == "pending"
+
+
 # ---------------------------------------------------------------------------
 # 转写派发: docx 抽文本 / 不支持类型 / 空文件
 # ---------------------------------------------------------------------------

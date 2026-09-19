@@ -222,6 +222,19 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
         )
         logger.info("init_schema: attachments table added")
 
+    # 同文件转写复用: sha256 指纹列 (幂等)。上传时发现同用户已有解析完成的
+    # 同内容文件, 直接把转写文本抄给新行, 不再调多模态模型。
+    if not conn.execute(
+        """SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'attachments'
+             AND column_name = 'sha256'"""
+    ).fetchone():
+        conn.execute("ALTER TABLE attachments ADD COLUMN sha256 TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_attachments_user_sha ON attachments (user_id, sha256)"
+        )
+        logger.info("init_schema: attachments.sha256 added (同文件转写复用)")
+
     # 多选题支持: questions.type 增加 mcq_multi + answers 列 (幂等, 老库也升级)。
     # 内联 CHECK 约束的默认名是 questions_type_check。
     if conn.execute("SELECT to_regclass('public.questions')").fetchone()[0]:

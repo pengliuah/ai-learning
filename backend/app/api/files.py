@@ -68,12 +68,20 @@ def get_file(attachment_id: str, user: dict = Depends(get_current_user)):
 
 
 @router.post("/api/files/{attachment_id}/transcribe")
-def retry_transcribe(attachment_id: str, user: dict = Depends(get_current_user)):
-    """发起/重新发起转写（幂等）：上传后 pending 的附件和 failed 的重试都走这里。"""
+async def retry_transcribe(attachment_id: str, user: dict = Depends(get_current_user)):
+    """发起/重新发起转写（幂等）：上传后 pending 的附件和 failed 的重试都走这里。
+
+    必须是 async def：start_transcription 里用 asyncio.create_task 把转写扔进
+    后台，同步端点跑在 uvicorn 线程池线程上没有事件循环，会直接
+    ``RuntimeError: no running event loop`` → 500（转写永远不开始，
+    前端无限轮询 pending —— 2026-09-19 真机事故的根因）。
+    """
     uid = str(user["id"])
     row = store.get_attachment(uid, attachment_id)
     if row is None:
         raise HTTPException(404, "附件不存在")
+    logger.info("transcribe: 用户触发转写 user=%s attachment=%s file=%r",
+                user["username"], attachment_id, row["filename"])
     attachments_svc.start_transcription(uid, attachment_id)
     return {"ok": True}
 

@@ -126,13 +126,20 @@ export function useAttachmentManager() {
     for (const it of targets) {
       patch(it.localId, { att: { ...it.att, transcriptStatus: "running", transcript: "" } });
     }
-    await Promise.all(
-      targets.map((it) =>
-        api.retryTranscribe(it.att.id).catch(() => {
-          // 发起失败不打断整体, 靠下面的轮询把 failed 状态读回来
-        }),
-      ),
-    );
+    // 发起失败不吞: 标记条目失败并中止提交 (此前吞掉导致无限轮询 pending)
+    try {
+      await Promise.all(targets.map((it) => api.retryTranscribe(it.att.id)));
+    } catch (err) {
+      const msg = (err as Error).message || "网络错误";
+      setItems((prev) =>
+        prev.map((x) =>
+          targets.some((t) => t.localId === x.localId)
+            ? { ...x, att: { ...x.att, transcriptStatus: "failed", transcript: msg } }
+            : x,
+        ),
+      );
+      throw new Error(`附件解析发起失败：${msg}`);
+    }
 
     // 轮询直到所有目标落到 done / failed
     let latest = new Map<string, Attachment>();

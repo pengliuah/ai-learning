@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from pathlib import Path
@@ -64,19 +65,37 @@ def create_attachment(user_id: str, filename: str, mime: str, data: bytes) -> di
     """Write the file to storage and insert its metadata row.
 
     先写文件再插行；插行失败时回滚刚写的文件，保证库里没有"幽灵路径"。
+
+    同文件转写复用: 按 (user_id, sha256) 找该用户此前已解析完成的同内容
+    文件，找到则把转写文本直接抄给新行（状态 done）——多模态模型只付一次
+    钱。仅限同一用户内复用（转写文本视为用户数据，不跨账号）。
     """
     att_id = str(uuid.uuid4())
     path_rel = f"{user_id}/{att_id}.bin"
     _write_file(path_rel, data)
+    sha = hashlib.sha256(data).hexdigest()
     try:
         with db_conn() as conn:
+            reused = conn.execute(
+                """SELECT transcript FROM attachments
+                   WHERE user_id = %s AND sha256 = %s AND transcript_status = 'done'
+                   ORDER BY created_at DESC LIMIT 1""",
+                (user_id, sha),
+            ).fetchone()
+            transcript = reused["transcript"] if reused else ""
+            status = "done" if reused else "pending"
             row = conn.execute(
-                """INSERT INTO attachments (id, user_id, filename, mime, size_bytes, path)
-                   VALUES (%s, %s, %s, %s, %s, %s)
+                """INSERT INTO attachments (id, user_id, filename, mime, size_bytes, path, sha256, transcript, transcript_status)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                    RETURNING id, filename, mime, size_bytes,
                              transcript, transcript_status, created_at""",
-                (att_id, user_id, filename, mime, len(data), path_rel),
+                (att_id, user_id, filename, mime, len(data), path_rel, sha, transcript, status),
             ).fetchone()
+        if reused:
+            logger.info(
+                "attachments: 同文件已解析过, 直接复用转写 (user=%s file=%r sha=%s...)",
+                user_id, filename, sha[:12],
+            )
         return dict(row)
     except Exception:
         _unlink(path_rel)

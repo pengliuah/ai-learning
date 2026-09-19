@@ -260,6 +260,8 @@ def transcribe_attachment(user_id: str, attachment_id: str) -> None:
         store.update_transcript(attachment_id, "原始文件丢失，请删除后重新上传", "failed")
         return
     store.update_transcript(attachment_id, "", "running")
+    logger.info("transcribe: start attachment=%s file=%r mime=%s size=%d",
+                attachment_id, att["filename"], att["mime"], att.get("size_bytes") or 0)
     try:
         _do_transcribe(user_id, att)
     except TranscribeError as exc:

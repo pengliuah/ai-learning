@@ -17,7 +17,7 @@ AI 学习助手全栈系统：输入一个学习主题（或上传学习资料�
 
 | 登录页（3D 地球 + 银河） | 学习计划列表 |
 |---|---|
-| ![登录页](docs/screenshots/login.png) | ![学习计划](docs/screenshots/home.png) |
+| ![登录页](docs/screenshots/login.png?v=2) | ![学习计划](docs/screenshots/home.png) |
 
 | 计划详情与模块进度 | AI 批改与逐题回顾 |
 |---|---|

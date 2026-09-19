@@ -131,6 +131,9 @@ export interface ModelSettings {
   embeddingApiKey: string;
   embeddingModel: string;
   embeddingBaseUrl: string;
+  visionApiKey: string;
+  visionModel: string;
+  visionBaseUrl: string;
 }
 
 export interface ModelSettingsUpdate {
@@ -141,6 +144,20 @@ export interface ModelSettingsUpdate {
   embeddingApiKey?: string | null;
   embeddingModel?: string | null;
   embeddingBaseUrl?: string | null;
+  visionApiKey?: string | null;
+  visionModel?: string | null;
+  visionBaseUrl?: string | null;
+}
+
+/** 上传的学习资料附件（转写状态: pending/running/done/failed） */
+export interface Attachment {
+  id: string;
+  filename: string;
+  mime: string;
+  sizeBytes: number;
+  transcriptStatus: "pending" | "running" | "done" | "failed";
+  transcript: string;
+  createdAt?: string | null;
 }
 
 export interface UsageStat {

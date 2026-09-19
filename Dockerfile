@@ -21,7 +21,8 @@ RUN pip install --no-cache-dir \
     "deepagents>=0.5" "pydantic>=2.9" "pydantic-settings>=2.5" \
     "python-dotenv>=1.0" "psycopg[binary,pool]>=3.2" \
     "bcrypt>=4.0" "pyjwt>=2.8" "cryptography>=42.0" \
-    "mem0ai==2.0.20"
+    "mem0ai==2.0.20" \
+    "pymupdf>=1.24" "python-docx>=1.1" "pillow>=10.0" "python-multipart>=0.0.9"
 
 # Copy backend source
 COPY backend/ ./

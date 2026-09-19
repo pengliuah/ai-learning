@@ -2,9 +2,10 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Send, Loader2, AlertCircle, ArrowRight, ClipboardList,
-  Search, Trash2, Copy, Check, Bookmark, Brain, X,
+  Search, Trash2, Copy, Check, Bookmark, Brain, X, Paperclip, FileText,
 } from "lucide-react";
 import { Markdown } from "../components/Markdown";
+import { AttachmentList, useAttachmentManager } from "../components/Attachments";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { ChatTurn, PlanListItem, SaveToImaResponse } from "../api/types";
@@ -31,6 +32,8 @@ interface Message {
   content: string;
   error?: string;
   tools?: ToolEvent[];
+  /** 本条用户消息附带的文件名（展示用，id 不持久化——转写在服务端） */
+  attNames?: string[];
 }
 
 const EXAMPLES = [
@@ -358,6 +361,8 @@ export function Coach() {
   const [streaming, setStreaming] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const attachments = useAttachmentManager();
+  const coachFileRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   // 仅当用户贴近底部时才自动跟随流式滚动，上滑查看历史时不抢滚动条
   const stickToBottom = useRef(true);
@@ -432,7 +437,14 @@ export function Coach() {
 
   const handleSend = async (text?: string) => {
     const goal = (text ?? input).trim();
-    if (!goal || streaming) return;
+    // 允许"只发附件不打字"——goal 缺省用一句引导语, 后端把资料转写拼进上下文
+    const attIds = attachments.readyIds;
+    if ((!goal && attIds.length === 0) || streaming) return;
+    if (attachments.hasActive) return; // 还有文件在解析/上传, 等就绪再发
+
+    const attNames = attachments.items
+      .filter((it) => attIds.includes(it.att.id))
+      .map((it) => it.att.filename);
 
     const assistantId = uid();
     setInput("");
@@ -441,9 +453,15 @@ export function Coach() {
     stickToBottom.current = true;
     setMessages((prev) => [
       ...prev,
-      { id: uid(), role: "user", content: goal },
+      {
+        id: uid(),
+        role: "user",
+        content: goal || `（发送了 ${attIds.length} 个学习资料文件）`,
+        attNames: attNames.length ? attNames : undefined,
+      },
       { id: assistantId, role: "assistant", content: "", tools: [] },
     ]);
+    attachments.detach(attIds);
 
     const history: ChatTurn[] = messages
       .filter((m) => m.content && !m.error)
@@ -489,6 +507,7 @@ export function Coach() {
         summaryState.summary || summaryState.count
           ? { summary: summaryState.summary, count: summaryState.count }
           : undefined,
+        attIds,
       );
     } catch (e) {
       setMessages((prev) =>
@@ -572,6 +591,19 @@ export function Coach() {
                     .join(" ")}
                 >
                   <p className="whitespace-pre-wrap">{m.content}</p>
+                  {m.attNames && m.attNames.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {m.attNames.map((name, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 rounded bg-white/15 px-1.5 py-0.5 text-xs"
+                        >
+                          <FileText className="h-3 w-3" />
+                          {name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </button>
                 {selectedUserId === m.id && (
                   <button
@@ -643,7 +675,27 @@ export function Coach() {
 
       {/* Input */}
       <div className="mx-auto w-full max-w-5xl shrink-0 border-t border-gray-200 px-4 pb-4 pt-3 dark:border-gray-700">
+        <AttachmentList manager={attachments} compact />
         <div className="flex items-end gap-2">
+          <button
+            onClick={() => coachFileRef.current?.click()}
+            disabled={streaming}
+            title="附上学习资料（图片 / PDF / Word / 文本）"
+            className="inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-md border border-gray-300 text-gray-500 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-400 dark:hover:border-indigo-500 dark:hover:text-indigo-400"
+          >
+            <Paperclip className="h-4 w-4" />
+          </button>
+          <input
+            ref={coachFileRef}
+            type="file"
+            accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.pdf,.docx,.txt,.md"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              attachments.addFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -659,7 +711,8 @@ export function Coach() {
           />
           <button
             onClick={() => handleSend()}
-            disabled={!input.trim() || streaming}
+            disabled={(!input.trim() && attachments.readyIds.length === 0) || streaming || attachments.hasActive}
+            title={attachments.hasActive ? "附件解析中，稍候再发送" : undefined}
             className="inline-flex h-[42px] items-center gap-1.5 rounded-md bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500 dark:hover:bg-indigo-600"
           >
             {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

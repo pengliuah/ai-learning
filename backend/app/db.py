@@ -194,6 +194,33 @@ def _migrate_auth_tables(conn: psycopg.Connection) -> None:
         )
         logger.info("init_schema: annotations table added")
 
+    # 学习资料附件 (全模态转写): 上传的原始文件 + 转写出的 markdown 文本。
+    # 转写在后台异步进行, transcript_status: pending/running/done/failed。
+    if not conn.execute("SELECT to_regclass('public.attachments')").fetchone()[0]:
+        conn.execute(
+            """CREATE TABLE attachments (
+                   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                   user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                   filename          TEXT NOT NULL DEFAULT '',
+                   mime              TEXT NOT NULL DEFAULT '',
+                   size_bytes        INTEGER NOT NULL DEFAULT 0,
+                   data              BYTEA,
+                   transcript        TEXT NOT NULL DEFAULT '',
+                   transcript_status TEXT NOT NULL DEFAULT 'pending',
+                   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+                   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+               )"""
+        )
+        conn.execute(
+            """CREATE TRIGGER attachments_set_updated_at
+               BEFORE UPDATE ON attachments
+               FOR EACH ROW EXECUTE FUNCTION set_updated_at()"""
+        )
+        conn.execute(
+            "CREATE INDEX idx_attachments_user ON attachments (user_id, created_at)"
+        )
+        logger.info("init_schema: attachments table added")
+
     # 多选题支持: questions.type 增加 mcq_multi + answers 列 (幂等, 老库也升级)。
     # 内联 CHECK 约束的默认名是 questions_type_check。
     if conn.execute("SELECT to_regclass('public.questions')").fetchone()[0]:
@@ -496,6 +523,15 @@ def init_schema() -> None:
                    ADD COLUMN IF NOT EXISTS embedding_api_key TEXT NOT NULL DEFAULT '',
                    ADD COLUMN IF NOT EXISTS embedding_model TEXT NOT NULL DEFAULT '',
                    ADD COLUMN IF NOT EXISTS embedding_base_url TEXT NOT NULL DEFAULT ''"""
+            )
+
+            # 多模态模型配置 (vision, 全模态转写附件用): 老库补列 (幂等)。
+            # 模型名必填才启用; Key / Base URL 留空时回退到大模型的对应值。
+            conn.execute(
+                """ALTER TABLE user_model_settings
+                   ADD COLUMN IF NOT EXISTS vision_api_key TEXT NOT NULL DEFAULT '',
+                   ADD COLUMN IF NOT EXISTS vision_model TEXT NOT NULL DEFAULT '',
+                   ADD COLUMN IF NOT EXISTS vision_base_url TEXT NOT NULL DEFAULT ''"""
             )
 
             # 长期记忆总开关 (幂等): 关掉后教练对话不写入/不召回。

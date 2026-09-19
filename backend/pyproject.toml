@@ -20,6 +20,11 @@ dependencies = [
     "pyjwt>=2.8",
     "cryptography>=42.0",
     "mem0ai==2.0.20",
+    # 学习资料转写: PDF 渲染 / docx 抽文本 / 大图片压缩; multipart 上传
+    "pymupdf>=1.24",
+    "python-docx>=1.1",
+    "pillow>=10.0",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]

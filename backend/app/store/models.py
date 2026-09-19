@@ -41,6 +41,7 @@ def get_model_settings_row(user_id: str) -> dict:
     out = dict(row)
     out["api_key"] = decrypt_field(out.get("api_key") or "")
     out["embedding_api_key"] = decrypt_field(out.get("embedding_api_key") or "")
+    out["vision_api_key"] = decrypt_field(out.get("vision_api_key") or "")
     return out
 
 
@@ -53,6 +54,9 @@ def update_model_settings(
     embedding_api_key: str | None = None,
     embedding_model: str | None = None,
     embedding_base_url: str | None = None,
+    vision_api_key: str | None = None,
+    vision_model: str | None = None,
+    vision_base_url: str | None = None,
 ) -> dict:
     """Update model settings fields (only non-None are set, values stripped)."""
     sets: list[str] = []
@@ -78,6 +82,15 @@ def update_model_settings(
     if embedding_base_url is not None:
         sets.append("embedding_base_url = %s")
         params.append(embedding_base_url.strip())
+    if vision_api_key is not None:
+        sets.append("vision_api_key = %s")
+        params.append(encrypt_field(vision_api_key.strip()))
+    if vision_model is not None:
+        sets.append("vision_model = %s")
+        params.append(vision_model.strip())
+    if vision_base_url is not None:
+        sets.append("vision_base_url = %s")
+        params.append(vision_base_url.strip())
     with db_conn() as conn:
         conn.execute(
             "INSERT INTO user_model_settings (user_id) VALUES (%s) ON CONFLICT DO NOTHING",
@@ -139,5 +152,21 @@ def is_embedding_configured_for_user(user_id: str) -> bool:
         return bool(get_embedding_config(user_id)[1])
     except Exception:
         return False
+
+
+def get_vision_config(user_id: str) -> tuple[str, str, str]:
+    """The user's vision (omni-modal) config ``(api_key, model, base_url)``.
+
+    模型名必填才视为已配置；vision_api_key / vision_base_url 留空时回退到
+    大模型的对应值——主模型本身就是全模态 (qwen-omni 等) 时零配置可用。
+    未配置返回空三元组。
+    """
+    row = get_model_settings_row(user_id)
+    model = (row.get("vision_model") or "").strip()
+    if not model:
+        return ("", "", "")
+    api_key = (row.get("vision_api_key") or "").strip() or row["api_key"]
+    base_url = (row.get("vision_base_url") or "").strip() or row["base_url"]
+    return (api_key, model, base_url)
 
 

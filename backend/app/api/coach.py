@@ -7,6 +7,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
+from .. import attachments as attachments_svc
 from .. import long_memory, store
 from ..auth import get_current_user
 from . import helpers as h
@@ -99,12 +100,22 @@ async def coach_stream(req: CoachRequest, user: dict = Depends(get_current_user)
     """
     h._require_configured(str(user["id"]))
     logger.info("coach_stream: user=%s goal=%s", user["username"], req.goal[:100])
+    uid = str(user["id"])
+
+    # 附件转写文本: 在流开始前同步解析, 未就绪直接 409 让前端稍候
+    materials = ""
+    if req.attachmentIds:
+        try:
+            materials = attachments_svc.build_materials_input(uid, req.attachmentIds)
+        except attachments_svc.AttachmentsNotReady:
+            raise HTTPException(409, "附件还在解析中，请稍等几秒再发送")
 
     async def event_stream():
         try:
             async for kind, payload in h.coach.coach_stream(
-                req.goal, req.history, str(user["id"]),
+                req.goal, req.history, uid,
                 prev_summary=req.summary, summarized_count=req.summarizedCount or 0,
+                materials=materials,
             ):
                 yield h._sse(kind, payload)
             yield h._sse("done", {"ok": True})

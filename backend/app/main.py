@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 
 from . import long_memory, store
 from .api import helpers as h
-from .api import admin, annotations, auth, coach, ima, memories, plans
+from .api import admin, annotations, auth, coach, files, ima, memories, plans
 from .api import settings as settings_router
 from .auth import get_current_user
 from .config import BACKEND_DIR, settings
@@ -61,6 +61,7 @@ app.include_router(coach.router)
 app.include_router(settings_router.router)
 app.include_router(memories.router)
 app.include_router(ima.router)
+app.include_router(files.router)
 
 @app.get("/api/health")
 def health(user: dict = Depends(get_current_user)):

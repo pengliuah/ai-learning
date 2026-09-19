@@ -7,6 +7,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
+from .. import attachments as attachments_svc
 from .. import long_memory, store
 from ..auth import get_current_user
 from ..agent import _friendly_llm_error
@@ -14,6 +15,26 @@ from . import helpers as h
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _resolve_source(req: PlanCreateRequest, uid: str) -> PlanSource:
+    """Build the PlanSource for creation, resolving attachment transcripts.
+
+    带附件时把转写文本拼成 materials 输入（两段式：全模态转写 → 现有规划
+    链路），mode 强制 materials；引用的附件都没转完返回 409。无附件原样透传。
+    """
+    input_text = (req.input or "").strip()
+    if req.attachmentIds:
+        try:
+            materials = attachments_svc.build_materials_input(uid, req.attachmentIds, input_text)
+        except attachments_svc.AttachmentsNotReady:
+            raise HTTPException(409, "附件还在解析中，请稍候几秒再生成")
+        if not materials:
+            raise HTTPException(400, "学习资料为空：请上传文件或输入文本")
+        return PlanSource(input=materials, mode="materials", attachmentIds=req.attachmentIds)
+    if req.mode == "materials" and not input_text:
+        raise HTTPException(400, "学习资料为空：请上传文件或输入文本")
+    return PlanSource(input=input_text, mode=req.mode, attachmentIds=[])
 
 from ..schemas import (
     AdminCreateUserRequest,
@@ -93,13 +114,15 @@ def create_plan(req: PlanCreateRequest, user: dict = Depends(get_current_user)):
         - 502: LLM 或结构化输出失败（已内置一次重试）。
     """
     h._require_configured(str(user["id"]))
-    logger.info("create_plan: user=%s input=%s mode=%s", user["username"], req.input[:100], req.mode)
+    logger.info("create_plan: user=%s input=%s mode=%s attachments=%d",
+                user["username"], req.input[:100], req.mode, len(req.attachmentIds))
+    source = _resolve_source(req, str(user["id"]))
     try:
-        plan = h.coach.make_plan(PlanSource(input=req.input, mode=req.mode), str(user["id"]))
+        plan = h.coach.make_plan(source, str(user["id"]))
     except Exception as exc:
         logger.error("create_plan: failed: %s", exc)
         raise HTTPException(status_code=502, detail=f"plan generation failed: {exc}")
-    doc = store.create_document(PlanSource(input=req.input, mode=req.mode), plan, str(user["id"]))
+    doc = store.create_document(source, plan, str(user["id"]))
     logger.info("create_plan: ok plan_id=%s title=%s modules=%d", doc.id, plan.title, len(plan.modules))
     return doc
 
@@ -128,12 +151,14 @@ async def create_plan_stream(req: PlanCreateRequest, user: dict = Depends(get_cu
     """
     uid = str(user["id"])
     h._require_configured(uid)
-    logger.info("create_plan_stream: user=%s input=%s mode=%s", user["username"], req.input[:100], req.mode)
+    logger.info("create_plan_stream: user=%s input=%s mode=%s attachments=%d",
+                user["username"], req.input[:100], req.mode, len(req.attachmentIds))
+    source = _resolve_source(req, uid)
 
     def work():
-        plan = h.coach.make_plan(PlanSource(input=req.input, mode=req.mode), uid)
+        plan = h.coach.make_plan(source, uid)
         logger.info("create_plan_stream: ok title=%s modules=%d", plan.title, len(plan.modules))
-        return store.create_document(PlanSource(input=req.input, mode=req.mode), plan, uid)
+        return store.create_document(source, plan, uid)
 
     async def event_stream():
         # LLM 调用放线程池; 每 30s 无结果就发心跳注释帧, 避免连接被中间层掐断

@@ -103,6 +103,8 @@ class Plan(BaseModel):
 class PlanSource(BaseModel):
     input: str
     mode: Literal["topic", "materials"] = "topic"
+    # 引用的附件 id (学习资料以文件上传时)；入库留痕便于追溯
+    attachmentIds: list[str] = Field(default_factory=list)
 
 
 class Document(BaseModel):
@@ -116,6 +118,7 @@ class Document(BaseModel):
 class PlanCreateRequest(BaseModel):
     input: str
     mode: Literal["topic", "materials"] = "topic"
+    attachmentIds: list[str] = Field(default_factory=list)
 
 
 class PlanListItem(BaseModel):
@@ -167,6 +170,8 @@ class CoachRequest(BaseModel):
     # 每轮带回来做增量合并, 避免整段旧对话全量重算。
     summary: str | None = None
     summarizedCount: int | None = None
+    # 本轮消息附带的文件 (学习资料转写后注入上下文)
+    attachmentIds: list[str] = Field(default_factory=list)
 # ---------------------------------------------------------------------------
 # App settings (IMA credentials + skill prompt, regeneration strategy)
 # ---------------------------------------------------------------------------
@@ -209,6 +214,10 @@ class ModelSettings(BaseModel):
     embeddingApiKey: str = ""
     embeddingModel: str = ""
     embeddingBaseUrl: str = ""
+    # 多模态模型配置（学习资料附件转写用；留空回退大模型）
+    visionApiKey: str = ""
+    visionModel: str = ""
+    visionBaseUrl: str = ""
 
 
 class ModelSettingsUpdate(BaseModel):
@@ -221,6 +230,9 @@ class ModelSettingsUpdate(BaseModel):
     embeddingApiKey: str | None = None
     embeddingModel: str | None = None
     embeddingBaseUrl: str | None = None
+    visionApiKey: str | None = None
+    visionModel: str | None = None
+    visionBaseUrl: str | None = None
 
 
 class ModelTestResult(BaseModel):
@@ -367,3 +379,18 @@ class AnnotationCreate(BaseModel):
 
 class AnnotationUpdate(BaseModel):
     note: str
+
+
+# ---------------------------------------------------------------------------
+# 学习资料附件 (上传 + 全模态转写)
+# ---------------------------------------------------------------------------
+
+class AttachmentOut(BaseModel):
+    """GET /api/files/{id} 返回的上传附件（含转写状态/结果）。"""
+    id: str
+    filename: str
+    mime: str
+    sizeBytes: int = 0
+    transcriptStatus: str = "pending"
+    transcript: str = ""
+    createdAt: datetime | None = None

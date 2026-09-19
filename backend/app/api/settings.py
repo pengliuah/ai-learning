@@ -126,6 +126,9 @@ def get_model_settings(user: dict = Depends(get_current_user)):
         embeddingApiKey=row.get("embedding_api_key") or "",
         embeddingModel=row.get("embedding_model") or "",
         embeddingBaseUrl=row.get("embedding_base_url") or "",
+        visionApiKey=row.get("vision_api_key") or "",
+        visionModel=row.get("vision_model") or "",
+        visionBaseUrl=row.get("vision_base_url") or "",
     )
 
 
@@ -141,18 +144,25 @@ def put_model_settings(req: ModelSettingsUpdate, user: dict = Depends(get_curren
         embedding_api_key=req.embeddingApiKey,
         embedding_model=req.embeddingModel,
         embedding_base_url=req.embeddingBaseUrl,
+        vision_api_key=req.visionApiKey,
+        vision_model=req.visionModel,
+        vision_base_url=req.visionBaseUrl,
     )
     reset = getattr(h.coach, "reset_model_runtime", None)
     if reset:
         reset()
-    logger.info("put_model_settings: updated (key set=%s, model set=%s, embedding set=%s)",
-                bool(row["api_key"]), bool(row["model"]), bool(row.get("embedding_model")))
+    logger.info("put_model_settings: updated (key set=%s, model set=%s, embedding set=%s, vision set=%s)",
+                bool(row["api_key"]), bool(row["model"]), bool(row.get("embedding_model")),
+                bool(row.get("vision_model")))
     return ModelSettings(
         apiKey=row["api_key"], model=row["model"],
         baseUrl=row["base_url"], maxTokens=row["max_tokens"],
         embeddingApiKey=row.get("embedding_api_key") or "",
         embeddingModel=row.get("embedding_model") or "",
         embeddingBaseUrl=row.get("embedding_base_url") or "",
+        visionApiKey=row.get("vision_api_key") or "",
+        visionModel=row.get("vision_model") or "",
+        visionBaseUrl=row.get("vision_base_url") or "",
     )
 
 

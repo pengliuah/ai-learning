@@ -598,6 +598,7 @@ class LearningCoach:
         user_id: str,
         prev_summary: str | None = None,
         summarized_count: int = 0,
+        materials: str = "",
     ) -> tuple[list, dict | None]:
         """Assemble one coach turn's messages: trimmed/compressed prior turns
         (temporary memory) followed by the new user goal.
@@ -605,6 +606,9 @@ class LearningCoach:
         滚动摘要: 客户端带回上一轮的摘要与其覆盖条数, 本轮只把新滑出窗口的
         片段并入摘要。返回 ``(messages, summary_payload)``——payload 非空时
         由调用方通过 SSE ``summary`` 事件回传客户端持久化。
+
+        ``materials``: 本轮附带的文件转写文本（附件转写管线产出），拼在
+        goal 之前注入；历史/摘要仍只记纯文本。
         """
         turns = history or []
 
@@ -649,7 +653,9 @@ class LearningCoach:
                 "这是你自己的长期记忆：学员问你是否记得 TA 或相关内容时，"
                 "请自然地依据以上信息回答，不要否认记得。"
             )))
-        messages.append(HumanMessage(content=goal))
+        messages.append(HumanMessage(
+            content=(f"{materials}\n\n---\n\n{goal}" if materials else goal)
+        ))
         _log_llm_messages("coach", messages)
         return messages, summary_payload
 
@@ -661,11 +667,13 @@ class LearningCoach:
         user_id: str = "",
         prev_summary: str | None = None,
         summarized_count: int = 0,
+        materials: str = "",
     ) -> AsyncIterator[tuple[str, object]]:
         """Run the chat agent: a normal conversation that calls create_plan /
         search_plans only when the LLM detects a clear intent."""
         # 存档意图快通道: 规则命中就不进模型, 也不做记忆检索, 直接发存档卡片
-        if _is_archive_intent(goal):
+        # (带附件时不走快道——用户可能是"把这份资料里的…记住", 需要模型看到内容)
+        if not materials and _is_archive_intent(goal):
             logger.info("coach_stream: 存档意图命中, 直接发卡片 (goal=%s)", goal[:50])
             yield ("tool", {"phase": "start", "name": "archive_content"})
             yield ("tool", {"phase": "end", "name": "archive_content", "output": "{}"})
@@ -673,7 +681,7 @@ class LearningCoach:
 
         agent = self._build_chat_agent(user_id)
         messages, summary_payload = await self._build_coach_messages(
-            goal, history, user_id, prev_summary, summarized_count,
+            goal, history, user_id, prev_summary, summarized_count, materials,
         )
         # 滚动摘要: 把更新后的摘要回传客户端持久化 (下一轮带回来, 只做增量合并)
         if summary_payload:

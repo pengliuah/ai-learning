@@ -93,8 +93,8 @@ export function usePlan(planId: string | undefined) {
 export function useCreatePlan() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ input, mode }: { input: string; mode: "topic" | "materials" }) =>
-      api.createPlan(input, mode),
+    mutationFn: ({ input, mode, attachmentIds }: { input: string; mode: "topic" | "materials"; attachmentIds?: string[] }) =>
+      api.createPlan(input, mode, attachmentIds),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: PLAN_KEYS.list });
     },

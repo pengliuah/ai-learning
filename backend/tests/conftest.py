@@ -104,9 +104,13 @@ class FakeCoach:
         self.result: GradingResult | None = None
         self.content: Content = Content(markdown="# heading\n\nbody paragraph", keyTakeaways=["point one", "point two"])
         self.last_grade_answers: dict | None = None
+        # 附件链路: 记录最近一次收到的 PlanSource / 附件转写文本
+        self.last_source: PlanSource | None = None
+        self.last_materials: str = ""
 
     def make_plan(self, source: PlanSource, user_id: str = "") -> Plan:
         assert self.plan is not None, "test must set fake_coach.plan"
+        self.last_source = source
         return self.plan
 
     def make_quiz(self, plan: Plan, module: Module, user_id: str = "") -> Quiz:
@@ -121,6 +125,13 @@ class FakeCoach:
     async def author_content_stream(self, plan: Plan, module: Module, user_id: str = "") -> AsyncIterator:
         yield ("delta", self.content.markdown)
         yield ("done", self.content)
+
+    async def coach_stream(self, goal, history=None, user_id: str = "",
+                           prev_summary=None, summarized_count: int = 0,
+                           materials: str = "") -> AsyncIterator:
+        self.last_materials = materials
+        yield ("delta", {"text": "ok"})
+        yield ("done", {"ok": True})
 
 
 @pytest.fixture

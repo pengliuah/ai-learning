@@ -257,6 +257,9 @@ CREATE TABLE user_model_settings (
     embedding_api_key   TEXT NOT NULL DEFAULT '',
     embedding_model     TEXT NOT NULL DEFAULT '',
     embedding_base_url  TEXT NOT NULL DEFAULT '',
+    vision_api_key      TEXT NOT NULL DEFAULT '',
+    vision_model        TEXT NOT NULL DEFAULT '',
+    vision_base_url     TEXT NOT NULL DEFAULT '',
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE TRIGGER user_model_settings_set_updated_at
@@ -350,3 +353,28 @@ CREATE TRIGGER annotations_set_updated_at
     BEFORE UPDATE ON annotations
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE INDEX idx_annotations_user_plan ON annotations (user_id, plan_id);
+
+-- ---------------------------------------------------------------------------
+-- attachments  -  学习资料附件（全模态转写）
+--
+-- 上传的原始文件存 BYTEA（上限 50MB），后台用多模态模型把内容转写成
+-- markdown 存 transcript；transcript_status: pending/running/done/failed。
+-- 计划创建与教练聊天通过 attachmentIds 引用附件的转写文本，两段式架构：
+-- 全模态只做"文件→文本"的理解层，不进计划生成的结构化输出链路。
+-- ---------------------------------------------------------------------------
+CREATE TABLE attachments (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    filename          TEXT NOT NULL DEFAULT '',
+    mime              TEXT NOT NULL DEFAULT '',
+    size_bytes        INTEGER NOT NULL DEFAULT 0,
+    data              BYTEA,
+    transcript        TEXT NOT NULL DEFAULT '',
+    transcript_status TEXT NOT NULL DEFAULT 'pending',
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TRIGGER attachments_set_updated_at
+    BEFORE UPDATE ON attachments
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE INDEX idx_attachments_user ON attachments (user_id, created_at);

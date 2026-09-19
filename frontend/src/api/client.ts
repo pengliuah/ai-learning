@@ -1,4 +1,4 @@
-import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary, Annotation, BookmarkItem, MemoryItem, MemoryProfile, MemorySettings, MemorySettingsUpdate, SaveToImaRequest, SaveToImaResponse, User, AuthResponse, AdminUserCreateInput } from "./types";
+import type { ChatTurn, Document, PlanListItem, Quiz, AnswersState, Content, GradingResult, ImaSettings, ImaSettingsUpdate, GenSettings, GenSettingsUpdate, ModelSettings, ModelSettingsUpdate, UsageSummary, Annotation, BookmarkItem, MemoryItem, MemoryProfile, MemorySettings, MemorySettingsUpdate, SaveToImaRequest, SaveToImaResponse, User, AuthResponse, AdminUserCreateInput, Attachment } from "./types";
 
 /**
  * 后端 API 基址。
@@ -171,6 +171,53 @@ async function sseTask<T>(url: string, init?: RequestInit): Promise<T> {
   return doneData;
 }
 
+/** 附件上传的 XHR 实现: fetch 不暴露上传进度, 50MB 文件需要进度条。 */
+function xhrUpload(file: File, onProgress?: (pct: number) => void): Promise<Attachment> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE}/files`);
+    xhr.setRequestHeader("Authorization", `Bearer ${getToken() ?? ""}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as Attachment);
+        } catch {
+          reject(new Error("响应解析失败"));
+        }
+      } else {
+        let msg = `HTTP ${xhr.status}`;
+        try {
+          msg = JSON.parse(xhr.responseText).detail || msg;
+        } catch {
+          // 非 JSON 响应体, 保留 HTTP 状态码信息
+        }
+        reject(new Error(msg));
+      }
+    };
+    xhr.onerror = () => reject(new Error("网络错误，上传失败"));
+    const fd = new FormData();
+    fd.append("file", file);
+    xhr.send(fd);
+  });
+}
+
+async function uploadFileWithRefresh(file: File, onProgress?: (pct: number) => void): Promise<Attachment> {
+  try {
+    return await xhrUpload(file, onProgress);
+  } catch (err) {
+    if (!(err instanceof Error && err.message === "HTTP 401")) throw err;
+  }
+  // access token 过期: 无感刷新后重试一次
+  if (!(await tryRefresh())) {
+    redirectToLogin();
+    throw new Error("登录已过期，请重新登录");
+  }
+  return xhrUpload(file, onProgress);
+}
+
 export const api = {
   health: () => json<{ configured: boolean; model: string }>("/health"),
 
@@ -251,13 +298,34 @@ export const api = {
   getPlan: (id: string) => json<Document>(`/plans/${id}`),
 
   // 计划创建是分钟级长任务: 走 SSE + 心跳保活, 否则移动网络会掐断空闲连接
-  // 报超时/失败 (而后端其实已生成入库)。
-  createPlan: (input: string, mode: "topic" | "materials") =>
+  // 报超时/失败 (而后端其实已生成入库)。带附件时后端用转写文本作资料。
+  createPlan: (input: string, mode: "topic" | "materials", attachmentIds: string[] = []) =>
     sseTask<Document>("/plans/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ input, mode }),
+      body: JSON.stringify({ input, mode, attachmentIds }),
     }),
+
+  // ----- files（学习资料附件: 上传后后端自动转写, 前端轮询拿状态）-----
+
+  uploadFile: (file: File, onProgress?: (pct: number) => void) =>
+    uploadFileWithRefresh(file, onProgress),
+
+  getFile: (id: string) => json<Attachment>(`/files/${id}`),
+
+  /** 转写失败后的重试入口（后端重新起转写任务）。 */
+  retryTranscribe: (id: string) =>
+    json<{ ok: boolean }>(`/files/${id}/transcribe`, { method: "POST" }),
+
+  deleteFile: (id: string) => json<{ ok: boolean }>(`/files/${id}`, { method: "DELETE" }),
+
+  /** 取原始文件的 blob URL（图片预览用）：<img src> 带不上 Authorization，
+   *  所以先 fetch(带认证) 再 createObjectURL。调用方用完记得 revokeObjectURL。 */
+  fileRawUrl: async (id: string) => {
+    const res = await fetch(`${API_BASE}/files/${id}/raw`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return URL.createObjectURL(await res.blob());
+  },
 
   deletePlan: (id: string) =>
     json<{ deleted: string }>(`/plans/${id}`, { method: "DELETE" }),
@@ -481,6 +549,7 @@ export const api = {
     onTool: (data: { phase: string; name: string; output?: string }) => void,
     onSummary?: (data: { summary: string; count: number }) => void,
     prev?: { summary: string; count: number },
+    attachmentIds: string[] = [],
   ): Promise<void> => {
     const doFetch = () =>
       fetch(`${API_BASE}/coach/stream`, {
@@ -491,6 +560,7 @@ export const api = {
           history,
           summary: prev?.summary || undefined,
           summarizedCount: prev?.count || undefined,
+          attachmentIds,
         }),
       });
     let res = await doFetch();

@@ -13,10 +13,6 @@
 services:
   zhixue:
     build: .
-    # 显式命名镜像: compose 默认镜像名 = <目录名>-<服务名>, 换部署目录
-    # (如 /opt/zhixue -> /opt/ai-learning) 时名字会变, deploy.sh 按镜像名
-    # 兜底清理残留容器会失配 —— 显式固定后与目录名无关
-    image: zhixue:latest
     expose:
       - "8000"
     volumes:

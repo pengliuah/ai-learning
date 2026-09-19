@@ -9,7 +9,7 @@
 # 流程:
 #   1. 备份数据库 + 附件目录 + .env (每类只保留最新一份)
 #   2. 停掉旧容器
-#   3. 拉取最新代码到 /opt/ai-learning
+#   3. 拉取最新代码到 /opt/zhixue
 #   4. 恢复 .env, JWT_SECRET 缺失时自动生成, 写入日志级别
 #   5. 构建镜像并启动, 轮询 /api/health 健康检查 (预期 401 = 后端活着且鉴权生效)
 #
@@ -21,10 +21,10 @@
 set -euo pipefail
 
 # ===== 可配置项 (可用环境变量覆盖) =====
-APP_DIR=${APP_DIR:-/opt/ai-learning}
+APP_DIR=${APP_DIR:-/opt/zhixue}
 REPO_URL=${REPO_URL:-https://github.com/pengliuah/ai-learning.git}
 BRANCH=${BRANCH:-master}
-IMAGE=${IMAGE:-zhixue:latest}  # 与 compose 的 image: 显式名对应
+IMAGE=${IMAGE:-zhixue-zhixue}
 BACKUP_DIR=${BACKUP_DIR:-/opt}
 # ========================================
 
@@ -90,33 +90,8 @@ else
   log "无残留容器, 跳过"
 fi
 
-# 一次性迁移 (先执行): 旧部署目录 /opt/zhixue -> /opt/ai-learning。
-# 三样数据搬过来: 数据库 pgdata / .env (JWT_SECRET/管理员配置) / 附件目录。
-# 只在目标为空时搬运, postgres 已停止, 拷贝安全; 老目录保留不删 (回退用)。
-# 顺序敏感: host 目录数据比命名卷新 (host pgdata 是现行存储), 必须先迁目录
-# 再迁卷 —— 若先迁卷, 目标被远古数据灌满, 目录迁移条件永远不成立, 近期数据
-# 被顶掉 (2026-09-20 记忆数据"丢失"事故根因)。
-OLD_APP_DIR=${OLD_APP_DIR:-/opt/zhixue}
-if [ "$OLD_APP_DIR" != "$APP_DIR" ] && [ -d "$OLD_APP_DIR" ]; then
-  if [ ! -f "$PGDATA_DIR/PG_VERSION" ] && [ -f "$OLD_APP_DIR/pgdata/PG_VERSION" ]; then
-    log "检测到旧部署目录 $OLD_APP_DIR, 迁移数据库到 $PGDATA_DIR (一次性)..."
-    mkdir -p "$PGDATA_DIR"
-    cp -a "$OLD_APP_DIR/pgdata/." "$PGDATA_DIR/"
-    log "旧目录数据库已迁移到 $PGDATA_DIR"
-  fi
-  if [ ! -f "$APP_DIR/.env" ] && [ -f "$OLD_APP_DIR/.env" ]; then
-    cp -a "$OLD_APP_DIR/.env" "$APP_DIR/.env"
-    log "旧目录 .env 已迁移到 $APP_DIR/.env (JWT_SECRET/管理员配置保持不变)"
-  fi
-  if [ ! -d "$APP_DIR/data/attachments" ] && [ -d "$OLD_APP_DIR/data/attachments" ]; then
-    mkdir -p "$APP_DIR/data"
-    cp -a "$OLD_APP_DIR/data/attachments" "$APP_DIR/data/attachments"
-    log "旧目录附件已迁移到 $APP_DIR/data/attachments"
-  fi
-fi
-
-# 一次性迁移 (仅在目录迁移后目标仍为空时): 更早期的数据库在命名卷
-# zhixue_pgdata 里; 卷存在且目标目录为空时把数据搬过来 (postgres 已停止)
+# 一次性迁移: 旧部署的数据库在命名卷 zhixue_pgdata 里, 现改为宿主机
+# ./pgdata 持久化; 卷存在且目标目录为空时把数据搬过来 (postgres 已停止, 拷贝安全)
 if docker volume inspect "$OLD_DB_VOLUME" >/dev/null 2>&1 && [ ! -f "$PGDATA_DIR/PG_VERSION" ]; then
   log "检测到旧数据库卷 $OLD_DB_VOLUME, 迁移到 $PGDATA_DIR (一次性)..."
   mkdir -p "$PGDATA_DIR"

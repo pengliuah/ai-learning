@@ -38,8 +38,8 @@ PostgreSQL）就绪的标志。
 ssh -T git@github.com     # 验证
 
 # 2. 准备部署目录并写配置
-sudo git clone https://github.com/pengliuah/ai-learning.git /opt/ai-learning
-cd /opt/ai-learning
+sudo git clone https://github.com/pengliuah/ai-learning.git /opt/zhixue
+cd /opt/zhixue
 sudo cp deploy.env.example .env
 sudo vi .env
 ```
@@ -93,8 +93,8 @@ sudo bash scripts/deploy.sh
 # 更新到最新
 sudo bash scripts/deploy.sh
 
-# 回滚代码: 在 /opt/ai-learning 检出旧 commit 后重新构建
-cd /opt/ai-learning && git checkout <旧commit>
+# 回滚代码: 在 /opt/zhixue 检出旧 commit 后重新构建
+cd /opt/zhixue && git checkout <旧commit>
 docker compose -f docker-compose.test.yml build && \
 docker compose -f docker-compose.test.yml up -d
 ```

@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, Download, FileText, Film, FileAudio, FileImage, Loader2,
-  RotateCcw, Trash2, Upload, X, Eye,
+  ArrowLeft, FileText, Film, FileAudio, FileImage, Loader2,
+  Play, RotateCcw, Trash2, Upload,
 } from "lucide-react";
 import { api } from "../api/client";
 import type { Attachment } from "../api/types";
-import { Markdown } from "../components/Markdown";
+import { AttachmentPreviewModal, isImageMime } from "../components/Attachments";
 import { useToast } from "../components/Toast";
 
 /**
  * 「学习资料」附件管理页：列出当前用户上传的全部文件，
- * 可预览（图片/PDF 原文件、文本文档看转写结果）、下载、删除、重试转写。
+ * 可预览（图片/PDF 原文件、文本文档看转写结果）、下载、删除、手动解析。
+ * 上传只存盘不转写；解析在点「解析」或计划/教练页提交时发生。
  */
 
 const ACCEPT = ".png,.jpg,.jpeg,.webp,.gif,.bmp,.pdf,.docx,.txt,.md";
@@ -29,20 +30,20 @@ function formatDate(iso?: string | null): string {
 }
 
 function fileIcon(mime: string) {
-  if (mime.startsWith("image/")) return FileImage;
+  if (isImageMime(mime)) return FileImage;
   if (mime.startsWith("video/")) return Film;
   if (mime.startsWith("audio/")) return FileAudio;
   return FileText;
 }
 
-/** 可预览原始文件的类型（其余类型预览转写文本） */
-function previewableRaw(mime: string): boolean {
-  return mime.startsWith("image/") || mime === "application/pdf";
-}
-
 function StatusBadge({ att }: { att: Attachment }) {
   switch (att.transcriptStatus) {
     case "pending":
+      return (
+        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+          待解析
+        </span>
+      );
     case "running":
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">
@@ -66,116 +67,6 @@ function StatusBadge({ att }: { att: Attachment }) {
         </span>
       );
   }
-}
-
-/** 预览弹窗：图片/PDF 显示原始文件，文本文档显示转写结果，均带下载按钮。 */
-function PreviewModal({ att, onClose }: { att: Attachment; onClose: () => void }) {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let revoked: string | null = null;
-    let cancelled = false;
-    if (previewableRaw(att.mime)) {
-      api
-        .fileRawUrl(att.id)
-        .then((url) => {
-          if (cancelled) {
-            URL.revokeObjectURL(url);
-            return;
-          }
-          revoked = url;
-          setBlobUrl(url);
-        })
-        .catch((e) => setError((e as Error).message));
-    }
-    return () => {
-      cancelled = true;
-      if (revoked) URL.revokeObjectURL(revoked);
-    };
-  }, [att]);
-
-  const download = async () => {
-    const url = blobUrl ?? (await api.fileRawUrl(att.id).catch(() => null));
-    if (!url) return;
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = att.filename;
-    a.click();
-    if (url !== blobUrl) URL.revokeObjectURL(url);
-  };
-
-  const showTranscript = att.transcript && !previewableRaw(att.mime);
-
-  return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg bg-white shadow-xl dark:bg-gray-800"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-700">
-          <FileText className="h-4 w-4 shrink-0 text-gray-400" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{att.filename}</p>
-            <p className="text-xs text-gray-400">
-              {formatSize(att.sizeBytes)} · {formatDate(att.createdAt)}
-            </p>
-          </div>
-          <button
-            onClick={download}
-            className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-            title="下载原始文件"
-          >
-            <Download className="h-4 w-4" />
-          </button>
-          <button
-            onClick={onClose}
-            className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-            title="关闭"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          {error ? (
-            <p className="text-sm text-red-600 dark:text-red-400">加载失败：{error}</p>
-          ) : att.mime.startsWith("image/") ? (
-            blobUrl ? (
-              <img src={blobUrl} alt={att.filename} className="mx-auto max-h-[65vh] object-contain" />
-            ) : (
-              <div className="flex justify-center py-16">
-                <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-              </div>
-            )
-          ) : att.mime === "application/pdf" ? (
-            blobUrl ? (
-              <iframe src={blobUrl} title={att.filename} className="h-[65vh] w-full rounded border border-gray-200 dark:border-gray-700" />
-            ) : (
-              <div className="flex justify-center py-16">
-                <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-              </div>
-            )
-          ) : showTranscript ? (
-            <div className="prose prose-sm max-w-none dark:prose-invert">
-              <Markdown>{att.transcript}</Markdown>
-            </div>
-          ) : (
-            <p className="py-8 text-center text-sm text-gray-400">
-              {att.transcriptStatus === "failed"
-                ? `解析失败：${att.transcript || "未知原因"}`
-                : att.transcriptStatus === "done"
-                  ? "该文件没有可预览的内容"
-                  : "内容解析中，完成后即可预览"}
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 export function Files() {
@@ -205,7 +96,7 @@ export function Files() {
     void refresh();
   }, [refresh]);
 
-  // 有解析中的附件时轮询刷新（与管理页里刚上传的文件同理）
+  // 有解析中的附件时轮询刷新
   const needsPoll = items.some(
     (a) => a.transcriptStatus === "pending" || a.transcriptStatus === "running",
   );
@@ -222,7 +113,7 @@ export function Files() {
       for (const f of Array.from(files)) {
         await api.uploadFile(f);
       }
-      toast("上传成功，开始解析", "success");
+      toast("上传成功", "success");
       await refresh();
     } catch (e) {
       toast(`上传失败：${(e as Error).message}`, "error");
@@ -242,14 +133,15 @@ export function Files() {
     }
   };
 
-  const handleRetry = async (att: Attachment) => {
+  /** 手动发起解析（pending / failed 都可用），状态交给轮询刷新 */
+  const handleTranscribe = async (att: Attachment) => {
     try {
       await api.retryTranscribe(att.id);
       setItems((prev) =>
-        prev.map((a) => (a.id === att.id ? { ...a, transcriptStatus: "pending", transcript: "" } : a)),
+        prev.map((a) => (a.id === att.id ? { ...a, transcriptStatus: "running", transcript: "" } : a)),
       );
     } catch (e) {
-      toast(`重试失败：${(e as Error).message}`, "error");
+      toast(`发起解析失败：${(e as Error).message}`, "error");
     }
   };
 
@@ -267,7 +159,7 @@ export function Files() {
         <div>
           <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">学习资料</h1>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            你上传过的全部附件。文件内容由全模态模型转写成文字，供生成学习计划和 AI 教练引用；原始文件可随时预览下载。
+            你上传过的全部附件。生成计划或教练对话引用时会用多模态模型把文件解析成文字；这里可预览原件、手动解析、下载和删除。
           </p>
         </div>
         <button
@@ -308,6 +200,7 @@ export function Files() {
         <div className="space-y-2">
           {items.map((att) => {
             const Icon = fileIcon(att.mime);
+            const canParse = att.transcriptStatus === "pending" || att.transcriptStatus === "failed";
             return (
               <div
                 key={att.id}
@@ -325,13 +218,13 @@ export function Files() {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-0.5">
-                  {att.transcriptStatus === "failed" && (
+                  {canParse && (
                     <button
-                      onClick={() => void handleRetry(att)}
-                      className="rounded p-2 text-gray-400 hover:bg-gray-100 hover:text-amber-600 dark:hover:bg-gray-700"
-                      title="重试解析"
+                      onClick={() => void handleTranscribe(att)}
+                      className="rounded p-2 text-gray-400 hover:bg-gray-100 hover:text-emerald-600 dark:hover:bg-gray-700 dark:hover:text-emerald-400"
+                      title={att.transcriptStatus === "pending" ? "开始解析" : "重试解析"}
                     >
-                      <RotateCcw className="h-4 w-4" />
+                      {att.transcriptStatus === "pending" ? <Play className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}
                     </button>
                   )}
                   <button
@@ -339,7 +232,7 @@ export function Files() {
                     className="rounded p-2 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-700 dark:hover:text-indigo-400"
                     title="预览"
                   >
-                    <Eye className="h-4 w-4" />
+                    预览
                   </button>
                   {confirmDeleteId === att.id ? (
                     <button
@@ -366,7 +259,7 @@ export function Files() {
         </div>
       )}
 
-      {preview && <PreviewModal att={preview} onClose={() => setPreview(null)} />}
+      {preview && <AttachmentPreviewModal att={preview} onClose={() => setPreview(null)} />}
     </div>
   );
 }

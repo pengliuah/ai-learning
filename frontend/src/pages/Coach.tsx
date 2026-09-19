@@ -438,9 +438,24 @@ export function Coach() {
   const handleSend = async (text?: string) => {
     const goal = (text ?? input).trim();
     // 允许"只发附件不打字"——goal 缺省用一句引导语, 后端把资料转写拼进上下文
-    const attIds = attachments.readyIds;
-    if ((!goal && attIds.length === 0) || streaming) return;
-    if (attachments.hasActive) return; // 还有文件在解析/上传, 等就绪再发
+    if ((!goal && attachments.items.length === 0) || streaming) return;
+    if (attachments.hasActive) return; // 还有文件在上传/解析中
+
+    // 提交时才转写: 待解析/失败的附件在这一步统一发起并等待, 失败则中止发送
+    setStreaming(true);
+    let attIds: string[] = [];
+    try {
+      attIds = await attachments.ensureTranscribed();
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { id: uid(), role: "assistant", content: "", error: (err as Error).message },
+      ]);
+      setStreaming(false);
+      return;
+    }
+    setStreaming(false);
+    if (!goal && attIds.length === 0) return;
 
     const attNames = attachments.items
       .filter((it) => attIds.includes(it.att.id))

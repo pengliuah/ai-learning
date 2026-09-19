@@ -29,10 +29,12 @@ def _out(row: dict) -> AttachmentOut:
 
 @router.post("/api/files")
 async def upload_file(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    """上传学习资料附件（图片/PDF/docx/txt/md，≤50MB），上传后自动开始转写。
+    """上传学习资料附件（图片/PDF/docx/txt/md，≤50MB）。
 
-    返回 ``AttachmentOut``，前端凭 ``id`` 轮询 ``GET /api/files/{id}`` 拿
-    转写状态与结果。类型校验以扩展名为准；超限/类型不支持直接拒绝。
+    只存盘入库，**不自动调用多模态模型转写**——转写发生在用户真正点
+    「生成计划」/「发送」时（POST /api/files/{id}/transcribe 触发），避免
+    白白烧掉用户不想用的附件的 token。返回 ``AttachmentOut``（状态 pending），
+    前端可凭 id 拿 /raw 预览原件。
     """
     uid = str(user["id"])
     mime = attachments_svc.sniff_mime(file.filename or "", file.content_type or "")
@@ -46,7 +48,6 @@ async def upload_file(file: UploadFile = File(...), user: dict = Depends(get_cur
     row = store.create_attachment(uid, (file.filename or "未命名")[:200], mime, data)
     logger.info("upload_file: user=%s file=%r mime=%s size=%d id=%s",
                 user["username"], row["filename"], mime, len(data), row["id"])
-    attachments_svc.start_transcription(uid, str(row["id"]))
     return _out(row)
 
 
@@ -68,7 +69,7 @@ def get_file(attachment_id: str, user: dict = Depends(get_current_user)):
 
 @router.post("/api/files/{attachment_id}/transcribe")
 def retry_transcribe(attachment_id: str, user: dict = Depends(get_current_user)):
-    """对转写失败的附件重新发起转写（幂等，done 状态也可重跑）。"""
+    """发起/重新发起转写（幂等）：上传后 pending 的附件和 failed 的重试都走这里。"""
     uid = str(user["id"])
     row = store.get_attachment(uid, attachment_id)
     if row is None:

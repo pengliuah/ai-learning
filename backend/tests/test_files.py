@@ -30,6 +30,16 @@ def _upload(client, filename: str, content: bytes, mime: str = "application/octe
 # 上传与归属
 # ---------------------------------------------------------------------------
 
+def test_upload_does_not_auto_transcribe(client, admin_user, monkeypatch):
+    """上传只存盘不转写; 转写由计划/教练提交或手动解析触发 (回归保护)。"""
+    called: list[str] = []
+    monkeypatch.setattr(attachments_svc, "start_transcription", lambda uid, aid: called.append(aid))
+    r = _upload(client, "a.txt", b"content", "text/plain")
+    assert r.status_code == 200
+    assert r.json()["transcriptStatus"] == "pending"
+    assert called == []
+
+
 def test_upload_txt_and_transcribe(client, no_auto_transcribe, admin_user):
     r = _upload(client, "资料.txt", "Python 装饰器是…".encode("utf-8"), "text/plain")
     assert r.status_code == 200, r.text

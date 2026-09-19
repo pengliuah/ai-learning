@@ -14,6 +14,7 @@ export function CreatePlan() {
   const [mode, setMode] = useState<"topic" | "materials">("topic");
   const [input, setInput] = useState(() => searchParams.get("topic") ?? "");
   const [elapsed, setElapsed] = useState(0);
+  const [parsing, setParsing] = useState(false);
   const attachments = useAttachmentManager();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -42,28 +43,34 @@ export function CreatePlan() {
     return () => window.removeEventListener("paste", onPaste);
   }, [mode, attachments]);
 
-  const attachmentsReady =
-    attachments.items.length > 0 && !attachments.hasActive;
   const canSubmit =
     mode === "topic"
       ? !!input.trim()
-      : (attachments.readyIds.length > 0 || !!input.trim()) && !attachments.hasActive;
+      : (attachments.items.length > 0 || !!input.trim()) && !attachments.hasActive;
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
     if (!canSubmit || createPlan.isPending) return;
+    // 提交时才转写附件: 待解析/失败的在这一步统一发起并等待, 失败则中止
+    let attachmentIds: string[] = [];
+    if (mode === "materials" && attachments.items.length > 0) {
+      try {
+        setParsing(true);
+        attachmentIds = await attachments.ensureTranscribed();
+      } catch {
+        setParsing(false);
+        return; // 失败原因已显示在附件条目上
+      }
+      setParsing(false);
+    }
     createPlan.mutate(
-      {
-        input,
-        mode,
-        attachmentIds: mode === "materials" ? attachments.readyIds : [],
-      },
+      { input, mode, attachmentIds },
       {
         onSuccess: (doc) => {
           navigate(`/plans/${doc.id}`);
         },
       },
     );
-  }, [canSubmit, createPlan, input, mode, attachments.readyIds, navigate]);
+  }, [canSubmit, createPlan, input, mode, attachments, navigate]);
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -165,23 +172,28 @@ export function CreatePlan() {
 
       {attachments.hasFailed && (
         <p className="mb-4 text-sm text-amber-600 dark:text-amber-400">
-          有附件解析失败，生成计划时将跳过它（可重试或移除）。
+          有附件解析失败，点击生成时会自动重试；仍失败会中止生成（可重试或移除）。
+        </p>
+      )}
+      {attachments.hasPending && (
+        <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+          待解析附件将在点击「生成计划」后自动解析（每个文件通常需要十几秒到一分钟）。
         </p>
       )}
 
       <div className="flex items-center gap-3">
         <button
           onClick={handleSubmit}
-          disabled={!canSubmit || createPlan.isPending}
+          disabled={!canSubmit || createPlan.isPending || parsing}
           className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500 dark:hover:bg-indigo-600"
         >
-          {createPlan.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-          {createPlan.isPending ? "生成中..." : "生成计划"}
+          {(parsing || createPlan.isPending) && <Loader2 className="h-4 w-4 animate-spin" />}
+          {parsing ? "解析附件中..." : createPlan.isPending ? "生成中..." : "生成计划"}
         </button>
         {mode === "materials" && attachments.hasActive && (
           <span className="inline-flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            文件解析完成后才能生成计划
+            文件上传中，请稍候
           </span>
         )}
       </div>

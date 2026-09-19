@@ -119,7 +119,7 @@ if [ -f "$APP_DIR/.env" ]; then
   cp -a "$APP_DIR/.env" "$BACKUP_DIR/zhixue.env.bak.$ts"
   log "2/5 已备份 .env -> $BACKUP_DIR/zhixue.env.bak.$ts"
 else
-  warn "$APP_DIR/.env 不存在 — 部署时将从 deploy.env.example 创建 (JWT_SECRET 会自动生成; ADMIN_PASSWORD 为空!)"
+  warn "$APP_DIR/.env 不存在 — 部署时将从 deploy.env.example 创建 (JWT_SECRET 会自动生成; 初始管理员 admin/admin, 登录后请改密)"
 fi
 
 # 备份清理: 每类备份只保留最新一份 (ls -t 按时间排, 当前这次的最新, 不会被删)。
@@ -155,6 +155,14 @@ if [ -f "$BACKUP_DIR/zhixue.env.bak.$ts" ]; then
   log "4/5 已恢复 .env"
 fi
 
+# .env 不存在时先从模板创建 (必须在 JWT_SECRET 之前): 否则 JWT 块会用
+# >> 先造出只有一两行的 .env, 模板回填被跳过, POSTGRES_PASSWORD /
+# ADMIN_PASSWORD 全部缺失 (2026-09-20 线上 .env 只有两行的事故根因)
+if [ ! -f "$APP_DIR/.env" ]; then
+  cp "$APP_DIR/deploy.env.example" "$APP_DIR/.env"
+  log "4/5 已从 deploy.env.example 创建 .env"
+fi
+
 # JWT_SECRET: 必须跨重启稳定 —— 它既是登录令牌的签名密钥, 也是用户 API Key
 # 静态加密的密钥 (FIELD_SECRET 未设置时回退到它)。缺失/为空时自动生成强随机值
 # 写入 .env 持久化 (.env 走上面的备份/恢复流程), 之后每次部署复用同一个值。
@@ -170,11 +178,7 @@ else
   log "4/5 JWT_SECRET 缺失, 已自动生成并写入 .env"
 fi
 
-# 日志级别: 写入/更新 .env 的 LOG_LEVEL (无 .env 时先从模板创建)
-if [ ! -f "$APP_DIR/.env" ]; then
-  cp "$APP_DIR/deploy.env.example" "$APP_DIR/.env"
-  log "4/5 已从 deploy.env.example 创建 .env (请尽快设置 JWT_SECRET / ADMIN_PASSWORD)"
-fi
+# 日志级别: 写入/更新 .env 的 LOG_LEVEL
 if grep -qE '^LOG_LEVEL=' "$APP_DIR/.env"; then
   sed -i "s/^LOG_LEVEL=.*/LOG_LEVEL=$LOG_LEVEL_ARG/" "$APP_DIR/.env"
 else

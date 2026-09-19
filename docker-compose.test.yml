@@ -1,9 +1,5 @@
 # ============================================================================
-# zhixue 测试环境编排 (纯 HTTP, 无域名无证书, 用服务器 IP 直接访问)
-#
-# 与 docker-compose.prod.yml 的区别仅在于 nginx:
-#   - test: 纯 HTTP 80 (见 nginx/zhixue-test.conf), 不挂载证书目录
-#   - prod: 80 跳 443 + SSL
+# zhixue 部署编排 (纯 HTTP, 无域名无证书, 用服务器 IP 直接访问)
 #
 # 密钥/配置从项目根目录 `.env` 读取 (docker compose 自动加载, 见 deploy.env.example)。
 #
@@ -41,8 +37,7 @@ services:
     # pgvector 镜像 = 官方 postgres 预装 pgvector 扩展 (AI 长期记忆/Mem0 用);
     # 数据仍在 ./pgdata, 与 postgres:16-alpine 二进制兼容, 换镜像重建即可
     image: pgvector/pgvector:pg16
-    # 测试环境: 对外暴露 5432, 供本地开发/调试直连测试库
-    # (线上环境 docker-compose.prod.yml 不暴露, 数据库只在 docker 内网)
+    # 对外暴露 5432, 供本地开发/调试直连数据库
     ports:
       - "${POSTGRES_EXPOSE_PORT:-5432}:5432"
     environment:

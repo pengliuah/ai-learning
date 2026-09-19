@@ -20,7 +20,7 @@ AI 学习助手全栈系统：输入一个学习主题（或上传学习资料�
 | 前端 | React 19 + TypeScript + Vite + Tailwind CSS + TanStack Query + react-router |
 | 后端 | Python 3.12 + FastAPI + LangChain / LangGraph + DeepAgents（计划/测验/批改子代理） |
 | 数据库 | PostgreSQL 16 + pgvector（Mem0 长期记忆向量检索） |
-| 部署 | Docker Compose（nginx + FastAPI 单容器托管 API 与前端静态产物），双环境（HTTP 测试 / HTTPS 生产） |
+| 部署 | Docker Compose（nginx + FastAPI 单容器托管 API 与前端静态产物），HTTP 直连 |
 | 移动端 | Capacitor 6（Android），复用网页前端 |
 
 ## 目录结构
@@ -29,33 +29,32 @@ AI 学习助手全栈系统：输入一个学习主题（或上传学习资料�
 frontend/          React 网页端
 backend/           FastAPI 后端（app/ 按域拆分；db/schema.sql 建表）
 mobile/            Capacitor Android 壳（打包见 mobile/APP打包指南.md）
-nginx/             两套环境的 nginx 配置 + 证书目录（ssl 不入库）
-scripts/deploy.sh  一键部署脚本（test | prod）
+nginx/             nginx 配置（HTTP，/api 反代支持 SSE 流式）
+scripts/deploy.sh  一键部署脚本
 docs/              记忆系统方案、移动端方案等设计文档
-DEPLOY.md          部署详细说明（架构、首次准备、证书、备份、故障排查）
+DEPLOY.md          部署详细说明（架构、首次准备、备份、故障排查）
 ```
 
 ## 快速部署
 
-详细说明（架构图、证书配置、备份/回滚、常见故障）见 [DEPLOY.md](DEPLOY.md)。
+详细说明（架构图、备份/回滚、App 打包、常见故障）见 [DEPLOY.md](DEPLOY.md)。
 
-**要求**：Linux 服务器 + Docker Compose v2 + git。
+**要求**：Linux 服务器 + Docker Compose v2 + git。部署形态为纯 HTTP、IP 直连（无域名/证书）。
 
 ```bash
-# 1. 拉代码 & 写配置
-sudo git clone git@github.com:pengliuah/zhixue.git /opt/zhixue
+# 1. 拉代码 & 写配置（部署分支 test-deploy，只含测试环境部署逻辑）
+sudo git clone -b test-deploy git@github.com:pengliuah/zhixue.git /opt/zhixue
 cd /opt/zhixue
 sudo cp deploy.env.example .env
 sudo vi .env    # 设置 POSTGRES_PASSWORD / JWT_SECRET / ADMIN_PASSWORD
 
-# 2. 一键部署（测试环境 HTTP，生产环境用 prod）
-sudo bash scripts/deploy.sh test
+# 2. 一键部署
+sudo bash scripts/deploy.sh
 
 # 3. 访问 http://<服务器IP>/ 用 .env 里的管理员账号登录
-#    生产环境（HTTPS 域名 + 证书）先看 DEPLOY.md 第 4 节，再 deploy.sh prod
 ```
 
-部署脚本每次会自动：备份数据库与附件目录 → git reset 到远端最新 → 构建镜像 → 迁移数据库（幂等）→ 健康检查。**模型 API Key 不需要在服务器配置**——部署完成后每个用户登录，在网页「模型设置」页填自己的 Key（存库、加密）。
+部署脚本每次会自动：备份数据库与附件目录 → git reset 到本分支远端最新 → 构建镜像 → 迁移数据库（幂等）→ 健康检查。**模型 API Key 不需要在服务器配置**——部署完成后每个用户登录，在网页「模型设置」页填自己的 Key（存库、加密）。
 
 首次部署后建议：管理员登录 → 「用户管理」生成邀请码发给学员 → 学员自助注册。
 

@@ -62,40 +62,45 @@ def _unlink(path_rel: str) -> None:
 
 
 def create_attachment(user_id: str, filename: str, mime: str, data: bytes) -> dict:
-    """Write the file to storage and insert its metadata row.
+    """Store one upload, or return the existing row for identical content.
 
-    先写文件再插行；插行失败时回滚刚写的文件，保证库里没有"幽灵路径"。
+    同文件去重: 先按 (user_id, sha256) 查一把, 该用户已传过同内容文件就
+    **直接返回老记录**（不写盘、不建新行, 返回值带 reused=True）——多模态
+    模型只付一次钱, 列表里也不会堆一排重复文件。优先复用已解析完成的；
+    同状态的取最新。仅限同一用户内复用（转写文本视为用户数据，不跨账号）。
 
-    同文件转写复用: 按 (user_id, sha256) 找该用户此前已解析完成的同内容
-    文件，找到则把转写文本直接抄给新行（状态 done）——多模态模型只付一次
-    钱。仅限同一用户内复用（转写文本视为用户数据，不跨账号）。
+    新文件先写盘再插行；插行失败时回滚刚写的文件，保证库里没有"幽灵路径"。
     """
+    sha = hashlib.sha256(data).hexdigest()
+    with db_conn() as conn:
+        existing = conn.execute(
+            f"""SELECT {_META_COLS} FROM attachments
+                WHERE user_id = %s AND sha256 = %s
+                ORDER BY CASE transcript_status
+                            WHEN 'done' THEN 0 ELSE 1
+                         END, created_at DESC
+                LIMIT 1""",
+            (user_id, sha),
+        ).fetchone()
+    if existing is not None:
+        logger.info(
+            "attachments: 同文件已存在, 复用老记录 (user=%s file=%r sha=%s... status=%s)",
+            user_id, filename, sha[:12], existing["transcript_status"],
+        )
+        return {**dict(existing), "reused": True}
+
     att_id = str(uuid.uuid4())
     path_rel = f"{user_id}/{att_id}.bin"
     _write_file(path_rel, data)
-    sha = hashlib.sha256(data).hexdigest()
     try:
         with db_conn() as conn:
-            reused = conn.execute(
-                """SELECT transcript FROM attachments
-                   WHERE user_id = %s AND sha256 = %s AND transcript_status = 'done'
-                   ORDER BY created_at DESC LIMIT 1""",
-                (user_id, sha),
-            ).fetchone()
-            transcript = reused["transcript"] if reused else ""
-            status = "done" if reused else "pending"
             row = conn.execute(
-                """INSERT INTO attachments (id, user_id, filename, mime, size_bytes, path, sha256, transcript, transcript_status)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """INSERT INTO attachments (id, user_id, filename, mime, size_bytes, path, sha256)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
                    RETURNING id, filename, mime, size_bytes,
                              transcript, transcript_status, created_at""",
-                (att_id, user_id, filename, mime, len(data), path_rel, sha, transcript, status),
+                (att_id, user_id, filename, mime, len(data), path_rel, sha),
             ).fetchone()
-        if reused:
-            logger.info(
-                "attachments: 同文件已解析过, 直接复用转写 (user=%s file=%r sha=%s...)",
-                user_id, filename, sha[:12],
-            )
         return dict(row)
     except Exception:
         _unlink(path_rel)

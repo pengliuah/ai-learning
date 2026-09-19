@@ -24,6 +24,7 @@ def _out(row: dict) -> AttachmentOut:
         transcriptStatus=row.get("transcript_status") or "pending",
         transcript=row.get("transcript") or "",
         createdAt=row.get("created_at"),
+        reused=bool(row.get("reused")),
     )
 
 

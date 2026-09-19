@@ -158,6 +158,8 @@ export interface Attachment {
   transcriptStatus: "pending" | "running" | "done" | "failed";
   transcript: string;
   createdAt?: string | null;
+  /** 上传命中同文件去重: 返回的是已有记录, 未写盘建新行 */
+  reused?: boolean;
 }
 
 export interface UsageStat {

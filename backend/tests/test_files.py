@@ -128,17 +128,20 @@ def test_transcribe_endpoint_end_to_end(client, admin_user):
     assert "端到端" in body["transcript"]
 
 
-def test_upload_same_file_reuses_transcription(client, no_auto_transcribe, admin_user):
-    """同用户上传内容相同的文件: 直接复用已有转写, 状态即 done。"""
+def test_upload_same_file_reuses_record(client, no_auto_transcribe, admin_user):
+    """同用户上传内容相同的文件: 不建新行, 直接返回老记录。"""
     r1 = _upload(client, "讲义.txt", b"same-content-body", "text/plain")
     attachments_svc.transcribe_attachment(str(admin_user["id"]), r1.json()["id"])
     assert client.get(f"/api/files/{r1.json()['id']}").json()["transcriptStatus"] == "done"
 
     r2 = _upload(client, "换个名字.txt", b"same-content-body", "text/plain")
     att2 = r2.json()
+    assert att2["reused"] is True
+    assert att2["id"] == r1.json()["id"]  # 同一条老记录
     assert att2["transcriptStatus"] == "done"
     assert att2["transcript"] == "same-content-body"
-    assert att2["id"] != r1.json()["id"]  # 各行独立生命周期
+    # 库里仍然只有一条
+    assert len(client.get("/api/files").json()) == 1
 
 
 def test_upload_same_file_different_user_not_reused(client, no_auto_transcribe, admin_user, normal_user):

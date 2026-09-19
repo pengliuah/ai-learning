@@ -394,3 +394,5 @@ class AttachmentOut(BaseModel):
     transcriptStatus: str = "pending"
     transcript: str = ""
     createdAt: datetime | None = None
+    # 上传命中同文件去重时为 True（返回的是已有记录, 未写盘建新行）
+    reused: bool = False

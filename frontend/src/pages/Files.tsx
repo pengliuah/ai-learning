@@ -110,10 +110,18 @@ export function Files() {
     if (!files?.length) return;
     setUploading(true);
     try {
+      const results: Attachment[] = [];
       for (const f of Array.from(files)) {
-        await api.uploadFile(f);
+        results.push(await api.uploadFile(f));
       }
-      toast("上传成功", "success");
+      const reusedCount = results.filter((r) => r.reused).length;
+      if (reusedCount === results.length && results.length > 0) {
+        toast("文件之前上传过，已直接复用", "success");
+      } else if (reusedCount > 0) {
+        toast(`上传成功（${reusedCount} 个文件复用了已有记录）`, "success");
+      } else {
+        toast("上传成功", "success");
+      }
       await refresh();
     } catch (e) {
       toast(`上传失败：${(e as Error).message}`, "error");
